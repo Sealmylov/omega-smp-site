@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Omega SMP</title>
+    
+    <!-- Подключаем шрифты -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Официальный скрипт Telegram Web App -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <style>
+        /* Сброс стандартных отступов браузера */
+        body, html {
+            margin: 0;
+            padding: 0;
+            background-color: #0B0414;
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent; /* Убирает синюю рамку при клике на мобилках */
+        }
+
+        .lD6N-main-container {
+            background: #0B0414; 
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* --- СТИЛИ ШАПКИ --- */
+        .lD6N-hero {
+            padding: 120px 0 80px; 
+            position: relative;
+            text-align: center;
+        }
+
+        .lD6N-hero-glow {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, rgba(11, 4, 20, 0) 70%);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .lD6N-hero .lD6N-wrapper {
+            position: relative;
+            z-index: 1;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 0 16px;
+        }
+
+        .lD6N-divider {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            max-width: 800px;
+            height: 1px;
+            background: linear-gradient(90deg, rgba(168, 85, 247, 0) 0%, rgba(168, 85, 247, 0.4) 50%, rgba(168, 85, 247, 0) 100%);
+        }
+
+        .lD6N-hero-title {
+            font-family: 'Manrope', sans-serif;
+            font-size: clamp(40px, 7vw, 72px);
+            color: #A855F7; 
+            margin: 0 0 8px 0;
+            letter-spacing: -0.02em;
+            font-weight: 800;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px; 
+        }
+
+        .lD6N-omega {
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 1.1em; 
+            font-weight: 400;
+            color: #C084FC;
+            text-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
+            vertical-align: middle;
+        }
+
+        .lD6N-hero-subtitle {
+            font-family: 'Manrope', sans-serif;
+            font-size: clamp(24px, 5vw, 36px);
+            color: #C084FC; 
+            margin: 0 0 24px 0;
+            font-weight: 600;
+        }
+
+        .lD6N-hero-desc {
+            color: #E0D7F5;
+            opacity: 0.7;
+            font-size: 16px;
+            line-height: 1.6;
+            max-width: 600px;
+            margin: 0 auto 48px;
+            font-weight: 500;
+        }
+
+        .lD6N-ip-box {
+            display: inline-flex;
+            align-items: center;
+            gap: 16px;
+            background: rgba(30, 15, 52, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(168, 85, 247, 0.2);
+            padding: 12px 16px 12px 24px;
+            border-radius: 24px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+
+        .lD6N-ip-text {
+            font-family: monospace;
+            font-size: 20px;
+            color: #FFFFFF;
+            font-weight: 700;
+        }
+
+        /* --- СТИЛИ ДОНАТА --- */
+        .lD6N-donation { 
+            padding: 60px 0 100px 0; 
+            color: #FFFFFF; 
+            position: relative; 
+        }
+        .lD6N-wrapper { max-width: 1170px; margin: 0 auto; padding: 0 16px; text-align: center; }
+        .lD6N-label { display: block; color: #A855F7; margin-bottom: 16px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.2px; font-size: 14px; }
+        .lD6N-heading { font-family: 'Manrope', sans-serif; font-size: 48px; color: #A855F7; margin-bottom: 24px; letter-spacing: -0.02em; font-weight: 700; }
+        .lD6N-subheading { max-width: 600px; margin: 0 auto 48px; font-weight: 500; color: #E0D7F5; opacity: 0.7; }
+        .lD6N-plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 48px; }
+        .lD6N-plan-card { padding: 40px; background: rgba(30, 15, 52, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 24px; transition: all 0.4s ease; display: flex; flex-direction: column; text-align: left; }
+        .lD6N-plan-card:hover { transform: translateY(-10px); border-color: rgba(168, 85, 247, 0.5); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
+        .lD6N-accent { border: 2px solid #A855F7; }
+        .lD6N-plan-card h3 { font-size: 24px; color: #A855F7; margin-bottom: 12px; margin-top: 0; }
+        .lD6N-price { font-size: 32px; font-weight: 700; color: #A855F7; margin-bottom: 4px; }
+        .lD6N-period { font-size: 14px; margin-bottom: 24px; color: rgba(224, 215, 245, 0.6); }
+        .lD6N-features { list-style: none; padding: 0; font-size: 15px; font-weight: 500; flex-grow: 1; color: #E0D7F5; margin: 0; }
+        .lD6N-features li { margin-bottom: 12px; display: flex; align-items: flex-start; opacity: 0.9; line-height: 1.4;}
+        .lD6N-features li::before { content: '✦'; color: #A855F7; margin-right: 10px; flex-shrink: 0; }
+        .lD6N-cta-note { margin-bottom: 16px; font-weight: 500; opacity: 0.8; font-size: 15px;}
+        .lD6N-cta-actions { display: flex; gap: 16px; justify-content: center; align-items: center; }
+
+        /* --- КНОПКИ --- */
+        .lD6N-btn-primary { padding: 12px 24px; border-radius: 12px; font-weight: 600; text-decoration: none; background: #A855F7; color: #FFFFFF; transition: background 0.3s ease; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 15px; display: inline-block;}
+        .lD6N-btn-primary:hover { background: #C084FC; }
+        .lD6N-btn-secondary { padding: 12px 24px; border-radius: 12px; font-weight: 600; text-decoration: none; border: 1px solid rgba(168, 85, 247, 0.3); color: #FFFFFF; transition: all 0.3s ease; cursor: pointer; display: inline-block; background: transparent; font-family: 'Inter', sans-serif; font-size: 15px;}
+        .lD6N-btn-secondary:hover { border-color: #A855F7; background: rgba(168, 85, 247, 0.1); }
+
+        #v-c3bf333e391d422588372c0eca85478c { font-weight: 800; font-size: 15px; text-decoration: none; color: #AF00FF; }
+
+        /* --- АНИМАЦИЯ --- */
+        .lD6N-reveal {
+            opacity: 0;
+            transform: translateY(60px); 
+            transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+            will-change: opacity, transform;
+        }
+        .lD6N-reveal.is-visible {
+            opacity: 1;
+            transform: translateY(0); 
+        }
+
+        /* --- АДАПТИВ --- */
+        @media (max-width: 768px) {
+            .lD6N-hero { padding: 80px 0 60px; }
+            .lD6N-donation { padding: 40px 0 48px 0; }
+            .lD6N-heading { font-size: 32px; }
+            .lD6N-hero-title { gap: 10px; }
+            .lD6N-plans { grid-template-columns: 1fr; gap: 16px; }
+            .lD6N-plan-card { padding: 24px; }
+            .lD6N-cta-actions { flex-direction: column; width: 100%; gap: 12px; }
+            .lD6N-btn-primary, .lD6N-btn-secondary { width: 100%; display: block; box-sizing: border-box; text-align: center; }
+            .lD6N-ip-box { flex-direction: column; padding: 20px; width: 100%; box-sizing: border-box; gap: 20px; }
+            .lD6N-ip-text { font-size: 18px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Инициализация Telegram Web App -->
+    <script>
+        if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.ready(); // Сообщаем, что страница загружена
+            window.Telegram.WebApp.expand(); // Раскрываем на весь экран
+        }
+    </script>
+
+    <div class="lD6N-main-container">
+        <!-- ================= ШАПКА ================= -->
+        <section class="lD6N-hero">
+            <div class="lD6N-hero-glow"></div>
+            <div class="lD6N-wrapper">
+                <h1 class="lD6N-hero-title">
+                    <span class="lD6N-omega">Ω</span>
+                    OMEGA SMP
+                    <span class="lD6N-omega">Ω</span>
+                </h1>
+                
+                <h2 class="lD6N-hero-subtitle">Второй сезон</h2>
+                <p class="lD6N-hero-desc">
+                    Добро пожаловать на наш уютный сервер! Здесь вас ждет ванильное выживание, интересные ивенты, дружное комьюнити и стабильность. Заходи, будет весело.
+                </p>
+
+                <div class="lD6N-ip-box">
+                    <span class="lD6N-ip-text">OmegaSMP.mc-join.me</span>
+                    <button class="lD6N-btn-primary" onclick="copyText('OmegaSMP.mc-join.me', this)">Скопировать IP</button>
+                </div>
+            </div>
+            <div class="lD6N-divider"></div>
+        </section>
+
+        <!-- ================= ДОНАТ ================= -->
+        <section id="donation" class="lD6N-donation lD6N-reveal">
+            <div class="lD6N-wrapper">
+                <span class="lD6N-label">МАГАЗИН ПРИВИЛЕГИЙ</span>
+                <h2 class="lD6N-heading">Стань легендой Omega SMP</h2>
+                <p class="lD6N-subheading">Каждый вклад идет на развитие инфраструктуры и хостинга. Новые ранги с расширенными возможностями уже доступны.</p>
+                
+                <div class="lD6N-plans">
+                    <div class="lD6N-plan-card" data-id="star">
+                        <h3>Star</h3>
+                        <div class="lD6N-price">390 ₽</div>
+                        <p class="lD6N-period">навсегда</p>
+                        <ul class="lD6N-features">
+                            <li>Уникальный градиентный префикс [Star]</li>
+                            <li>Доступ к 5 точкам дома (/sethome)</li>
+                            <li>Возможность захода на полный сервер</li>
+                            <li>Набор ресурсов Star-kit раз в 24 часа</li>
+                            <li>Приоритет в очереди на сезонные ивенты 2026</li>
+                            <li>Доступ к базовым командам декора</li>
+                        </ul>
+                    </div>
+                    <div class="lD6N-plan-card lD6N-accent" data-id="nova">
+                        <h3>Nova</h3>
+                        <div class="lD6N-price">790 ₽</div>
+                        <p class="lD6N-period">навсегда</p>
+                        <ul class="lD6N-features">
+                            <li>Все возможности ранга Star</li>
+                            <li>Доступ к 15 точкам дома и 5 регионам</li>
+                            <li>Команда /fly в лобби и творческом хабе</li>
+                            <li>Уникальный эффект неонового следа Nova</li>
+                            <li>Скидка 10% на все будущие наборы ресурсов</li>
+                            <li>Слот в инвентаре для кастомного питомца</li>
+                        </ul>
+                    </div>
+                    <div class="lD6N-plan-card" data-id="supernova">
+                        <h3>Supernova</h3>
+                        <div class="lD6N-price">1490 ₽</div>
+                        <p class="lD6N-period">навсегда</p>
+                        <ul class="lD6N-features">
+                            <li>Все возможности ранга Nova</li>
+                            <li>Доступ к 50 точкам дома и 10 регионам</li>
+                            <li>Возможность изменять свой префикс (/tags)</li>
+                            <li>Доступ к эксклюзивным косметическим маскам</li>
+                            <li>Приоритетная поддержка в Discord 24/7</li>
+                            <li>Доступ к бета-тестированию новых механик 2026</li>
+                        </ul>
+                    </div>
+                    <div class="lD6N-plan-card" data-id="omega">
+                        <h3>Omega</h3>
+                        <div class="lD6N-price">2990 ₽</div>
+                        <p class="lD6N-period">навсегда</p>
+                        <ul class="lD6N-features">
+                            <li>Максимальный статус и безлимитные приваты</li>
+                            <li>Эксклюзивный анимированный префикс в табе</li>
+                            <li>Доступ к базе кастомных голов /hdb</li>
+                            <li>Право на создание собственного клана бесплатно</li>
+                            <li>Прямая связь с разработчиками в закрытом чате</li>
+                            <li>Именная табличка на Аллее Славы спавна</li>
+                        </ul>
+                    </div>
+                    <div class="lD6N-plan-card" data-id="item-kit">
+                        <h3>Набор Ресурсов</h3>
+                        <div class="lD6N-price">150 ₽</div>
+                        <ul class="lD6N-features">
+                            <li>Сет незеритовой брони (защита IV)</li>
+                            <li>Инструменты с чарами</li>
+                            <li>Стак золотых яблок</li>
+                            <li>Элитры с запасом фейерверков</li>
+                            <li>Шалкер-бокс</li>
+                            <li>Колба опыта (64 штуки)</li>
+                        </ul>
+                    </div>
+                    <div class="lD6N-plan-card" data-id="unban">
+                        <h3>Разбан</h3>
+                        <div class="lD6N-price">350 ₽</div>
+                        <ul class="lD6N-features">
+                            <li>Разбан аккаунта</li>
+                            <li>Снятие всех предупреждений (варнов)</li>
+                            <li>Шанс начать с чистого листа</li>
+                            <li>Только при отсутствии грубых нарушений</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="lD6N-cta-wrapper">
+                    <div class="lD6N-cta-note" id="v-c3bf333e391d422588372c0eca85478c">(Отвечаю в MAX быстрее)</div>
+                    <div class="lD6N-cta-actions">
+                        <button class="lD6N-btn-primary" onclick="copyText('@Sealmylov', this)" style="position: relative; z-index: 10;">Telegram: @Sealmylov</button>
+                        <button class="lD6N-btn-secondary" onclick="copyText('+79129147295', this)" style="position: relative; z-index: 10;">MAX: +79129147295</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // 1. Копирование текста с визуальным откликом и вибрацией (для Telegram)
+        function copyText(textToCopy, btnElement) {
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            textArea.style.position = "fixed";
+            textArea.style.top = "-9999px";
+            document.body.appendChild(textArea);
+            
+            textArea.focus();
+            textArea.select();
+            textArea.setSelectionRange(0, 99999);
+            
+            try {
+                document.execCommand('copy');
+                
+                // Визуальный отклик
+                const originalText = btnElement.innerText;
+                const originalBg = btnElement.style.background;
+                
+                btnElement.innerText = "Скопировано!";
+                btnElement.style.background = "#22c55e"; 
+                btnElement.style.color = "#FFFFFF";
+                
+                // Вибро-отклик для Telegram
+                if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+                    window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+                }
+                
+                setTimeout(() => {
+                    btnElement.innerText = originalText;
+                    btnElement.style.background = originalBg; 
+                }, 2000);
+                
+            } catch (err) {
+                console.error('Ошибка копирования', err);
+            }
+            
+            document.body.removeChild(textArea);
+        }
+
+        // 2. Анимация появления/исчезновения (IntersectionObserver работает идеально в чистом HTML)
+        document.addEventListener("DOMContentLoaded", function() {
+            const donationSection = document.querySelector('.lD6N-donation');
+            
+            if (donationSection) {
+                const observerOptions = {
+                    root: null,
+                    rootMargin: '0px',
+                    threshold: 0.1 
+                };
+
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            entry.target.classList.add('is-visible'); // Появился - выезжает
+                        } else {
+                            entry.target.classList.remove('is-visible'); // Ушел - прячется
+                        }
+                    });
+                }, observerOptions);
+
+                observer.observe(donationSection);
+            }
+        });
+    </script>
+</body>
+</html>
