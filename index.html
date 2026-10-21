@@ -604,7 +604,7 @@
             document.getElementById('btn-' + tabId).classList.add('active');
         }
 
-        // 5. Генерация и скачивание HTML файла
+        // 5. Генерация и скачивание HTML файла (ИСПРАВЛЕНА АНКЕТА)
         function downloadAdminForm() {
             const htmlContent = `
             <!DOCTYPE html>
@@ -654,16 +654,46 @@
                     
                     .question { margin-bottom: 30px; }
                     .question-text { font-weight: 600; font-size: 16px; margin-bottom: 12px; color: #FFFFFF; }
-                    .line { border-bottom: 2px dashed rgba(168, 85, 247, 0.3); height: 35px; transition: border-color 0.3s; }
-                    .line:hover { border-bottom-color: #A855F7; }
+                    
+                    /* Стили для полей ввода */
+                    .input-line {
+                        width: 100%;
+                        background: transparent;
+                        border: none;
+                        border-bottom: 2px dashed rgba(168, 85, 247, 0.3);
+                        color: #FFFFFF;
+                        font-family: 'Inter', sans-serif;
+                        font-size: 16px;
+                        padding: 5px 0;
+                        outline: none;
+                        transition: border-color 0.3s;
+                    }
+                    .input-line:focus { border-bottom-color: #A855F7; }
+                    
+                    .input-area {
+                        width: 100%;
+                        background: transparent;
+                        border: none;
+                        border-bottom: 2px dashed rgba(168, 85, 247, 0.3);
+                        color: #FFFFFF;
+                        font-family: 'Inter', sans-serif;
+                        font-size: 16px;
+                        padding: 5px 0;
+                        outline: none;
+                        resize: vertical;
+                        min-height: 40px;
+                        transition: border-color 0.3s;
+                    }
+                    .input-area:focus { border-bottom-color: #A855F7; }
                     
                     .special-question { background: rgba(168, 85, 247, 0.1); padding: 20px; border-radius: 12px; border-left: 4px solid #A855F7; margin-bottom: 30px; }
                     .special-question .question-text { color: #C084FC; }
-                    .special-question .line { border-bottom-color: rgba(168, 85, 247, 0.5); }
+                    .special-question .input-line { border-bottom-color: rgba(168, 85, 247, 0.5); }
                     
                     .footer { margin-top: 50px; text-align: center; font-size: 14px; color: #888; border-top: 1px solid rgba(168,85,247,0.2); padding-top: 20px; line-height: 1.6; }
                     .footer strong { color: #A855F7; }
 
+                    /* Настройки для печати (PDF) */
                     @media print {
                         body { background-color: #FFFFFF; padding: 0; display: block; }
                         .form-container { background: transparent; border: none; box-shadow: none; padding: 0; }
@@ -671,9 +701,10 @@
                         h1 { color: #6B21A8; text-shadow: none; }
                         h2 { color: #666; }
                         .question-text { color: #000; }
-                        .line { border-bottom: 1px solid #000; }
+                        .input-line, .input-area { border-bottom: 1px solid #000; color: #000; }
                         .special-question { background: transparent; border: 1px solid #000; }
                         .special-question .question-text { color: #000; }
+                        .special-question .input-line { border-bottom: 1px solid #000; }
                         .footer { color: #666; border-top: 1px solid #ccc; }
                         .footer strong { color: #000; }
                     }
@@ -685,18 +716,18 @@
                         <h1>OMEGA SMP</h1>
                         <h2>Анкета для вступления в администрацию сервера</h2>
                         
-                        <div class="question"><div class="question-text">1. Ваш игровой ник в Minecraft:</div><div class="line"></div></div>
-                        <div class="question"><div class="question-text">2. Ваш возраст (и часовой пояс):</div><div class="line"></div></div>
-                        <div class="question"><div class="question-text">3. Есть ли у вас опыт администрирования? (Если да, расскажите где и кем):</div><div class="line"></div><div class="line"></div></div>
-                        <div class="question"><div class="question-text">4. Сколько времени в день вы готовы уделять серверу?</div><div class="line"></div></div>
-                        <div class="question"><div class="question-text">5. Как вы обычно решаете конфликты между игроками?</div><div class="line"></div><div class="line"></div></div>
-                        <div class="question"><div class="question-text">6. Что вы сделаете, если увидите читера/грифера?</div><div class="line"></div></div>
-                        <div class="question"><div class="question-text">7. Почему вы хотите стать администратором именно нашего сервера?</div><div class="line"></div><div class="line"></div></div>
-                        <div class="question"><div class="question-text">8. Ваш Telegram, Discord или номер в MAX для связи:</div><div class="line"></div></div>
+                        <div class="question"><div class="question-text">1. Ваш игровой ник в Minecraft:</div><input type="text" class="input-line"></div>
+                        <div class="question"><div class="question-text">2. Ваш возраст (и часовой пояс):</div><input type="text" class="input-line"></div>
+                        <div class="question"><div class="question-text">3. Есть ли у вас опыт администрирования? (Если да, расскажите где и кем):</div><textarea class="input-area"></textarea></div>
+                        <div class="question"><div class="question-text">4. Сколько времени в день вы готовы уделять серверу?</div><input type="text" class="input-line"></div>
+                        <div class="question"><div class="question-text">5. Как вы обычно решаете конфликты между игроками?</div><textarea class="input-area"></textarea></div>
+                        <div class="question"><div class="question-text">6. Что вы сделаете, если увидите читера/грифера?</div><input type="text" class="input-line"></div>
+                        <div class="question"><div class="question-text">7. Почему вы хотите стать администратором именно нашего сервера?</div><textarea class="input-area"></textarea></div>
+                        <div class="question"><div class="question-text">8. Ваш Telegram, Discord или номер в MAX для связи:</div><input type="text" class="input-line"></div>
                         
                         <div class="special-question">
                             <div class="question-text">9. Обязуетесь ли вы соблюдать ВСЕ правила сервера (и для игроков, и для администрации), кроме правила №2 для игроков (про Freecam)? (Обязательно ответить "Да, обязуюсь"):</div>
-                            <div class="line" style="border-bottom: 2px dashed #A855F7;"></div>
+                            <input type="text" class="input-line" style="border-bottom: 2px dashed #A855F7;">
                         </div>
                         
                         <div class="footer">
