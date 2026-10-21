@@ -14,371 +14,840 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
     <style>
-        /* Сброс стандартных отступов браузера */
+        /* Сброс стандартных отступов */
         body, html {
             margin: 0;
             padding: 0;
             background-color: #0B0414;
             font-family: 'Inter', sans-serif;
-            -webkit-tap-highlight-color: transparent; /* Убирает синюю рамку при клике на мобилках */
+            -webkit-tap-highlight-color: transparent;
+            scroll-behavior: smooth;
+            overflow-x: hidden;
         }
 
-        .lD6N-main-container {
-            background: #0B0414; 
-            overflow: hidden;
-            position: relative;
-        }
+        #bg-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
+        #cursor-glow { position: fixed; width: 300px; height: 300px; background: radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, rgba(11, 4, 20, 0) 70%); border-radius: 50%; pointer-events: none; z-index: 1; transform: translate(-50%, -50%); transition: opacity 0.3s ease; opacity: 0; }
+        .lD6N-main-container { background: transparent; overflow: hidden; position: relative; z-index: 2; }
 
-        /* --- СТИЛИ ШАПКИ --- */
-        .lD6N-hero {
-            padding: 120px 0 80px; 
-            position: relative;
-            text-align: center;
-        }
+        /* ================= ПРЕЛОАДЕР ================= */
+        #splash-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #0B0414; background-image: radial-gradient(circle at center, rgba(168, 85, 247, 0.1) 0%, #0B0414 70%); z-index: 99999; display: flex; justify-content: center; align-items: center; transition: opacity 0.8s ease, visibility 0.8s ease; }
+        #splash-screen.hidden { opacity: 0; visibility: hidden; }
+        .splash-content { display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+        
+        .splash-omega-wrapper { position: relative; display: flex; justify-content: center; align-items: center; width: 180px; height: 180px; margin-bottom: 20px; }
+        .splash-ring { position: absolute; width: 100%; height: 100%; border: 2px solid transparent; border-top-color: #A855F7; border-bottom-color: #A855F7; border-radius: 50%; animation: spin 2s linear infinite; box-shadow: 0 0 30px rgba(168, 85, 247, 0.4); }
+        .splash-ring-inner { position: absolute; width: 80%; height: 80%; border: 1px solid transparent; border-left-color: #C084FC; border-right-color: #C084FC; border-radius: 50%; animation: spin-reverse 3s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes spin-reverse { 100% { transform: rotate(-360deg); } }
 
-        .lD6N-hero-glow {
-            position: absolute;
-            top: 20%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 800px;
-            height: 800px;
-            background: radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, rgba(11, 4, 20, 0) 70%);
-            z-index: 0;
-            pointer-events: none;
-        }
+        .splash-omega { font-family: 'Times New Roman', Times, serif; font-size: 100px; color: #C084FC; text-shadow: 0 0 40px rgba(168, 85, 247, 0.9); animation: pulseOmega 1.5s infinite alternate; z-index: 2; line-height: 1; }
+        
+        .splash-text-wrapper { text-align: center; position: relative; }
+        .splash-text { font-family: 'Manrope', sans-serif; font-size: 42px; font-weight: 800; color: #FFFFFF; text-transform: uppercase; letter-spacing: 4px; text-shadow: 0 0 20px rgba(168, 85, 247, 0.8); animation: textPulse 2s infinite alternate; }
+        .splash-season { font-family: 'Manrope', sans-serif; font-size: 18px; font-weight: 600; color: #C084FC; text-transform: uppercase; letter-spacing: 3px; margin-top: 5px; }
 
-        .lD6N-hero .lD6N-wrapper {
-            position: relative;
-            z-index: 1;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 0 16px;
-        }
+        @keyframes pulseOmega { 0% { transform: scale(1); text-shadow: 0 0 20px rgba(168, 85, 247, 0.5); } 100% { transform: scale(1.05); text-shadow: 0 0 60px rgba(168, 85, 247, 1); } }
+        @keyframes textPulse { 0% { opacity: 0.8; text-shadow: 0 0 10px rgba(168, 85, 247, 0.4); } 100% { opacity: 1; text-shadow: 0 0 30px rgba(168, 85, 247, 1); } }
 
-        .lD6N-divider {
-            position: absolute;
-            bottom: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 80%;
-            max-width: 800px;
-            height: 1px;
-            background: linear-gradient(90deg, rgba(168, 85, 247, 0) 0%, rgba(168, 85, 247, 0.4) 50%, rgba(168, 85, 247, 0) 100%);
-        }
+        .splash-progress { margin-top: 40px; width: 250px; height: 4px; background: rgba(168, 85, 247, 0.2); border-radius: 4px; overflow: hidden; position: relative; }
+        .splash-progress-bar { height: 100%; background: #A855F7; border-radius: 4px; box-shadow: 0 0 15px #A855F7; position: relative; width: 0%; animation: loadProgress 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+        .splash-progress-bar::after { content: ''; position: absolute; right: 0; top: 0; width: 10px; height: 100%; background: #FFF; box-shadow: 0 0 15px #FFF; border-radius: 50%; }
 
-        .lD6N-hero-title {
-            font-family: 'Manrope', sans-serif;
-            font-size: clamp(40px, 7vw, 72px);
-            color: #A855F7; 
-            margin: 0 0 8px 0;
-            letter-spacing: -0.02em;
-            font-weight: 800;
-            text-transform: uppercase;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px; 
-        }
+        @keyframes loadProgress { 0% { width: 0%; } 100% { width: 100%; } }
 
-        .lD6N-omega {
-            font-family: 'Times New Roman', Times, serif;
-            font-size: 1.1em; 
-            font-weight: 400;
-            color: #C084FC;
-            text-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
-            vertical-align: middle;
-        }
+        /* ================= ГЛАВНАЯ ================= */
+        .lD6N-hero { padding: 60px 0 60px; position: relative; text-align: center; min-height: 80vh; display: flex; flex-direction: column; justify-content: center; }
+        .lD6N-hero .lD6N-wrapper { position: relative; z-index: 3; max-width: 800px; margin: 0 auto; padding: 0 16px; display: flex; flex-direction: column; align-items: center; }
+        
+        .lD6N-hero-box { background: linear-gradient(145deg, rgba(20, 10, 35, 0.6), rgba(10, 5, 20, 0.8)); backdrop-filter: blur(20px); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 32px; padding: 50px 30px; box-shadow: 0 30px 60px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(168, 85, 247, 0.05); position: relative; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; }
+        .lD6N-hero-box::before, .lD6N-hero-box::after { content: ''; position: absolute; width: 40px; height: 40px; pointer-events: none; border: 2px solid #A855F7; }
+        .lD6N-hero-box::before { top: -1px; left: -1px; border-right: none; border-bottom: none; border-top-left-radius: 32px; }
+        .lD6N-hero-box::after { bottom: -1px; right: -1px; border-left: none; border-top: none; border-bottom-right-radius: 32px; }
 
-        .lD6N-hero-subtitle {
-            font-family: 'Manrope', sans-serif;
-            font-size: clamp(24px, 5vw, 36px);
-            color: #C084FC; 
-            margin: 0 0 24px 0;
-            font-weight: 600;
-        }
+        .lD6N-badge { display: inline-block; background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.5); color: #E0D7F5; padding: 8px 24px; border-radius: 30px; font-size: 13px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 24px; box-shadow: 0 0 20px rgba(168, 85, 247, 0.3), inset 0 0 10px rgba(168, 85, 247, 0.2); text-shadow: 0 0 10px rgba(168, 85, 247, 0.8); }
+        
+        .lD6N-hero-title { font-family: 'Manrope', sans-serif; font-size: clamp(40px, 7vw, 76px); color: #FFFFFF; margin: 0 0 16px 0; letter-spacing: -0.02em; font-weight: 800; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 20px; animation: titleGlow 3s infinite alternate; }
+        @keyframes titleGlow { 0% { text-shadow: 0 0 20px rgba(168, 85, 247, 0.3); } 100% { text-shadow: 0 0 50px rgba(168, 85, 247, 0.7), 0 0 100px rgba(168, 85, 247, 0.4); } }
+        
+        .lD6N-omega { font-family: 'Times New Roman', Times, serif; font-size: 1.2em; font-weight: 400; color: #A855F7; text-shadow: 0 0 20px rgba(168, 85, 247, 0.8); vertical-align: middle; animation: floatOmega 4s ease-in-out infinite; }
+        .lD6N-omega:last-child { animation-delay: -2s; }
+        @keyframes floatOmega { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
 
-        .lD6N-hero-desc {
-            color: #E0D7F5;
-            opacity: 0.7;
-            font-size: 16px;
-            line-height: 1.6;
-            max-width: 600px;
-            margin: 0 auto 48px;
-            font-weight: 500;
-        }
+        .lD6N-hero-desc { color: #E0D7F5; opacity: 0.8; font-size: 17px; line-height: 1.6; max-width: 600px; margin: 0 auto 30px; font-weight: 500; }
+        
+        /* Панель статуса сервера (только версия) */
+        .lD6N-server-stats { display: flex; justify-content: center; align-items: center; margin-bottom: 30px; background: rgba(0,0,0,0.4); padding: 10px 24px; border-radius: 12px; border: 1px solid rgba(168, 85, 247, 0.2); }
+        .lD6N-stat-item { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: #E0D7F5; }
 
-        .lD6N-ip-box {
-            display: inline-flex;
-            align-items: center;
-            gap: 16px;
-            background: rgba(30, 15, 52, 0.6);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(168, 85, 247, 0.2);
-            padding: 12px 16px 12px 24px;
-            border-radius: 24px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-        }
+        .lD6N-ip-widget { display: flex; align-items: center; background: linear-gradient(#0B0414, #0B0414) padding-box, linear-gradient(90deg, #A855F7, #6B21A8, #A855F7) border-box; border: 2px solid transparent; border-radius: 16px; padding: 8px 8px 8px 24px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(168, 85, 247, 0.1); margin-bottom: 30px; transition: box-shadow 0.3s ease, transform 0.3s ease; position: relative; overflow: hidden; }
+        .lD6N-ip-widget:hover { box-shadow: 0 15px 40px rgba(168, 85, 247, 0.4), inset 0 0 30px rgba(168, 85, 247, 0.2); transform: translateY(-2px); }
+        .lD6N-ip-text { font-family: 'Courier New', Courier, monospace; font-size: 18px; color: #C084FC; font-weight: 700; margin-right: 20px; letter-spacing: 1px; position: relative; z-index: 1; }
+        .lD6N-ip-text::after { content: '_'; animation: blink 1s step-end infinite; color: #A855F7; }
+        @keyframes blink { 50% { opacity: 0; } }
+        
+        .lD6N-copy-btn { background: #A855F7; color: white; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4); }
+        .lD6N-copy-btn:hover { background: #C084FC; box-shadow: 0 6px 20px rgba(168, 85, 247, 0.6); }
+        .lD6N-copy-btn:active { transform: scale(0.95); }
 
-        .lD6N-ip-text {
-            font-family: monospace;
-            font-size: 20px;
-            color: #FFFFFF;
-            font-weight: 700;
-        }
+        .lD6N-hero-actions { display: flex; gap: 16px; justify-content: center; width: 100%; max-width: 450px; margin-top: 10px; }
+        .lD6N-action-btn-wrapper { position: relative; flex: 1; }
+        .lD6N-action-btn-wrapper::before { content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(45deg, #A855F7, transparent, #A855F7); border-radius: 14px; z-index: -1; animation: borderGlow 3s linear infinite; opacity: 0.7; background-size: 200% 200%; }
+        @keyframes borderGlow { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        .lD6N-btn-action { padding: 14px 20px; border-radius: 12px; font-weight: 700; font-size: 14px; color: #FFFFFF; border: none; background: #0B0414; transition: all 0.3s ease; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; z-index: 1; width: 100%; white-space: nowrap;}
+        .lD6N-btn-action:hover { background: rgba(168, 85, 247, 0.15); color: #C084FC; }
+        .lD6N-btn-action svg { transition: transform 0.3s ease; }
+        .lD6N-btn-action:hover svg { transform: scale(1.1) rotate(5deg); }
 
-        /* --- СТИЛИ ДОНАТА --- */
-        .lD6N-donation { 
-            padding: 60px 0 100px 0; 
-            color: #FFFFFF; 
-            position: relative; 
-        }
+        .lD6N-divider { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 80%; max-width: 800px; height: 1px; background: linear-gradient(90deg, rgba(168, 85, 247, 0) 0%, rgba(168, 85, 247, 0.6) 50%, rgba(168, 85, 247, 0) 100%); box-shadow: 0 0 20px rgba(168, 85, 247, 0.5); }
+
+        /* ================= ДОНАТ ================= */
+        .lD6N-donation { padding: 60px 0 100px 0; color: #FFFFFF; position: relative; z-index: 3; }
         .lD6N-wrapper { max-width: 1170px; margin: 0 auto; padding: 0 16px; text-align: center; }
-        .lD6N-label { display: block; color: #A855F7; margin-bottom: 16px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.2px; font-size: 14px; }
-        .lD6N-heading { font-family: 'Manrope', sans-serif; font-size: 48px; color: #A855F7; margin-bottom: 24px; letter-spacing: -0.02em; font-weight: 700; }
-        .lD6N-subheading { max-width: 600px; margin: 0 auto 48px; font-weight: 500; color: #E0D7F5; opacity: 0.7; }
+        .lD6N-donation-box { background: linear-gradient(145deg, rgba(20, 10, 35, 0.6), rgba(10, 5, 20, 0.8)); backdrop-filter: blur(20px); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 40px; padding: 60px 30px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8), inset 0 0 60px rgba(168, 85, 247, 0.05); position: relative; overflow: hidden; }
+        .lD6N-donation-box::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 60%; height: 2px; background: linear-gradient(90deg, transparent, #A855F7, transparent); box-shadow: 0 0 20px #A855F7; }
+
+        .lD6N-label { display: block; color: #A855F7; margin-bottom: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; font-size: 14px; }
+        .lD6N-heading { font-family: 'Manrope', sans-serif; font-size: clamp(32px, 5vw, 48px); color: #FFFFFF; margin-bottom: 24px; letter-spacing: -0.02em; font-weight: 800; }
+        .lD6N-subheading { max-width: 600px; margin: 0 auto 48px; font-weight: 500; color: #E0D7F5; opacity: 0.7; line-height: 1.5;}
         .lD6N-plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 48px; }
-        .lD6N-plan-card { padding: 40px; background: rgba(30, 15, 52, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 24px; transition: all 0.4s ease; display: flex; flex-direction: column; text-align: left; }
-        .lD6N-plan-card:hover { transform: translateY(-10px); border-color: rgba(168, 85, 247, 0.5); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
-        .lD6N-accent { border: 2px solid #A855F7; }
-        .lD6N-plan-card h3 { font-size: 24px; color: #A855F7; margin-bottom: 12px; margin-top: 0; }
-        .lD6N-price { font-size: 32px; font-weight: 700; color: #A855F7; margin-bottom: 4px; }
-        .lD6N-period { font-size: 14px; margin-bottom: 24px; color: rgba(224, 215, 245, 0.6); }
+        
+        .lD6N-plan-card { padding: 40px; background: linear-gradient(rgba(30, 15, 52, 0.8), rgba(30, 15, 52, 0.8)) padding-box, linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(168, 85, 247, 0.05)) border-box; border: 1px solid transparent; border-radius: 24px; transition: all 0.4s ease; display: flex; flex-direction: column; text-align: left; position: relative; }
+        .lD6N-plan-card:hover { background: linear-gradient(rgba(40, 20, 70, 0.9), rgba(40, 20, 70, 0.9)) padding-box, linear-gradient(135deg, #A855F7, #C084FC) border-box; transform: translateY(-5px); box-shadow: 0 15px 35px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(168, 85, 247, 0.2); }
+        .lD6N-accent { background: linear-gradient(rgba(40, 20, 70, 0.9), rgba(40, 20, 70, 0.9)) padding-box, linear-gradient(135deg, #A855F7, #6B21A8) border-box; border: 2px solid transparent; box-shadow: 0 0 20px rgba(168, 85, 247, 0.2); }
+        
+        .lD6N-plan-card h3 { font-size: 24px; color: #A855F7; margin-bottom: 12px; margin-top: 0; font-weight: 800;}
+        .lD6N-price { font-size: 36px; font-weight: 800; color: #FFFFFF; margin-bottom: 4px; }
+        .lD6N-period { font-size: 14px; margin-bottom: 24px; color: rgba(224, 215, 245, 0.6); font-weight: 500;}
         .lD6N-features { list-style: none; padding: 0; font-size: 15px; font-weight: 500; flex-grow: 1; color: #E0D7F5; margin: 0; }
         .lD6N-features li { margin-bottom: 12px; display: flex; align-items: flex-start; opacity: 0.9; line-height: 1.4;}
         .lD6N-features li::before { content: '✦'; color: #A855F7; margin-right: 10px; flex-shrink: 0; }
+        
         .lD6N-cta-note { margin-bottom: 16px; font-weight: 500; opacity: 0.8; font-size: 15px;}
         .lD6N-cta-actions { display: flex; gap: 16px; justify-content: center; align-items: center; }
-
-        /* --- КНОПКИ --- */
-        .lD6N-btn-primary { padding: 12px 24px; border-radius: 12px; font-weight: 600; text-decoration: none; background: #A855F7; color: #FFFFFF; transition: background 0.3s ease; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 15px; display: inline-block;}
+        .lD6N-btn-primary { padding: 14px 28px; border-radius: 12px; font-weight: 700; text-decoration: none; background: #A855F7; color: #FFFFFF; transition: background 0.3s ease; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 15px; display: inline-block;}
         .lD6N-btn-primary:hover { background: #C084FC; }
-        .lD6N-btn-secondary { padding: 12px 24px; border-radius: 12px; font-weight: 600; text-decoration: none; border: 1px solid rgba(168, 85, 247, 0.3); color: #FFFFFF; transition: all 0.3s ease; cursor: pointer; display: inline-block; background: transparent; font-family: 'Inter', sans-serif; font-size: 15px;}
+        .lD6N-btn-secondary { padding: 14px 28px; border-radius: 12px; font-weight: 700; text-decoration: none; border: 1px solid rgba(168, 85, 247, 0.4); color: #FFFFFF; transition: all 0.3s ease; cursor: pointer; display: inline-block; background: transparent; font-family: 'Inter', sans-serif; font-size: 15px;}
         .lD6N-btn-secondary:hover { border-color: #A855F7; background: rgba(168, 85, 247, 0.1); }
-
         #v-c3bf333e391d422588372c0eca85478c { font-weight: 800; font-size: 15px; text-decoration: none; color: #AF00FF; }
 
-        /* --- АНИМАЦИЯ --- */
-        .lD6N-reveal {
-            opacity: 0;
-            transform: translateY(60px); 
-            transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
-            will-change: opacity, transform;
-        }
-        .lD6N-reveal.is-visible {
-            opacity: 1;
-            transform: translateY(0); 
-        }
+        .lD6N-reveal { opacity: 0; transform: translateY(80px); transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); will-change: opacity, transform; }
+        .lD6N-reveal.is-visible { opacity: 1; transform: translateY(0); }
 
-        /* --- АДАПТИВ --- */
+        /* ================= МОДАЛЬНЫЕ ОКНА ================= */
+        .lD6N-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(11, 4, 20, 0.9); backdrop-filter: blur(12px); z-index: 100000; display: flex; justify-content: center; align-items: center; opacity: 0; visibility: hidden; transition: opacity 0.4s ease, visibility 0.4s ease; }
+        .lD6N-modal-overlay.active { opacity: 1; visibility: visible; }
+        
+        .lD6N-modal-content { background: linear-gradient(145deg, rgba(30, 15, 52, 0.95), rgba(15, 8, 25, 0.95)); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 28px; padding: 35px 25px; width: 90%; max-width: 480px; text-align: center; position: relative; transform: translateY(30px) scale(0.95); transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.05); max-height: 85vh; display: flex; flex-direction: column; }
+        .lD6N-modal-overlay.active .lD6N-modal-content { transform: translateY(0) scale(1); }
+        
+        .lD6N-modal-close { position: absolute; top: 20px; right: 20px; width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; background: rgba(168, 85, 247, 0.1); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 50%; color: #A855F7; font-size: 22px; cursor: pointer; transition: all 0.3s; z-index: 10;}
+        .lD6N-modal-close:hover { background: #A855F7; color: white; transform: rotate(90deg); }
+        .lD6N-modal-title { font-family: 'Manrope', sans-serif; color: #FFFFFF; font-size: 24px; font-weight: 800; margin-top: 0; margin-bottom: 20px; text-shadow: 0 0 20px rgba(168, 85, 247, 0.4); flex-shrink: 0;}
+
+        /* Админ состав */
+        .lD6N-admin-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 30px; overflow-y: auto; padding-right: 5px;}
+        .lD6N-admin-card { display: flex; align-items: center; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(168, 85, 247, 0.15); border-radius: 20px; padding: 16px; text-align: left; transition: all 0.3s ease; position: relative; overflow: hidden; }
+        .lD6N-admin-card:hover { background: rgba(168, 85, 247, 0.08); border-color: rgba(168, 85, 247, 0.5); transform: translateX(5px); box-shadow: -5px 0 15px -5px rgba(168, 85, 247, 0.3); }
+        .lD6N-admin-avatar { width: 48px; height: 48px; border-radius: 14px; display: flex; justify-content: center; align-items: center; font-size: 24px; margin-right: 16px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); }
+        .lD6N-admin-card:nth-child(1) .lD6N-admin-avatar { background: linear-gradient(135deg, #A855F7, #6B21A8); }
+        .lD6N-admin-card:nth-child(2) .lD6N-admin-avatar, .lD6N-admin-card:nth-child(3) .lD6N-admin-avatar { background: linear-gradient(135deg, #3B82F6, #1D4ED8); }
+        .lD6N-admin-info { display: flex; flex-direction: column; flex-grow: 1; }
+        .lD6N-admin-name { font-weight: 700; color: #FFFFFF; font-size: 17px; letter-spacing: 0.5px; margin-bottom: 4px;}
+        .lD6N-admin-role { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; letter-spacing: 0.5px; width: fit-content; }
+        .lD6N-admin-card:nth-child(1) .lD6N-admin-role { background: rgba(168, 85, 247, 0.2); color: #D8B4FE; border: 1px solid rgba(168, 85, 247, 0.4); }
+        .lD6N-admin-card:nth-child(2) .lD6N-admin-role, .lD6N-admin-card:nth-child(3) .lD6N-admin-role { background: rgba(59, 130, 246, 0.2); color: #93C5FD; border: 1px solid rgba(59, 130, 246, 0.4); }
+
+        .lD6N-btn-download { width: 100%; padding: 16px; border-radius: 16px; background: linear-gradient(90deg, #A855F7, #C084FC); color: #FFFFFF; font-weight: 800; font-size: 16px; border: none; cursor: pointer; transition: all 0.3s ease; display: flex; justify-content: center; align-items: center; gap: 10px; box-shadow: 0 8px 25px rgba(168, 85, 247, 0.4); text-transform: uppercase; letter-spacing: 1px; flex-shrink: 0;}
+        .lD6N-btn-download:hover { background: linear-gradient(90deg, #C084FC, #A855F7); transform: translateY(-2px); box-shadow: 0 12px 30px rgba(168, 85, 247, 0.6); }
+
+        /* Вкладки правил */
+        .lD6N-rules-tabs { display: flex; gap: 10px; margin-bottom: 20px; background: rgba(0,0,0,0.4); padding: 6px; border-radius: 16px; flex-shrink: 0; border: 1px solid rgba(168, 85, 247, 0.1);}
+        .lD6N-rule-tab-btn { flex: 1; padding: 12px; border-radius: 10px; background: transparent; border: none; color: #E0D7F5; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.3s ease; font-family: 'Inter', sans-serif;}
+        .lD6N-rule-tab-btn.active { background: #A855F7; color: white; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4); }
+
+        .lD6N-rules-content-wrapper { text-align: left; overflow-y: auto; padding-right: 10px; flex-grow: 1;}
+        .lD6N-rules-content-wrapper::-webkit-scrollbar, .lD6N-admin-list::-webkit-scrollbar { width: 6px; }
+        .lD6N-rules-content-wrapper::-webkit-scrollbar-thumb, .lD6N-admin-list::-webkit-scrollbar-thumb { background: rgba(168, 85, 247, 0.3); border-radius: 10px; }
+
+        .lD6N-rule-tab-content { display: none; animation: fadeIn 0.3s ease; }
+        .lD6N-rule-tab-content.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .lD6N-rule-card { margin-bottom: 16px; padding: 16px; border-radius: 16px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); display: flex; gap: 12px; align-items: flex-start; }
+        .lD6N-rule-card.bad { border-left: 4px solid #ef4444; background: linear-gradient(90deg, rgba(239, 68, 68, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%); }
+        .lD6N-rule-card.good { border-left: 4px solid #22c55e; background: linear-gradient(90deg, rgba(34, 197, 94, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%); }
+        
+        .lD6N-rule-icon { font-size: 20px; line-height: 1; flex-shrink: 0; margin-top: 2px;}
+        .lD6N-rule-text { font-size: 14px; line-height: 1.6; color: #E0D7F5; }
+        .lD6N-rule-text strong { color: #FFFFFF; font-weight: 700; display: block; margin-bottom: 4px; font-size: 15px;}
+        .lD6N-rule-num { color: #A855F7; font-weight: 800; margin-right: 4px; }
+
         @media (max-width: 768px) {
-            .lD6N-hero { padding: 80px 0 60px; }
-            .lD6N-donation { padding: 40px 0 48px 0; }
-            .lD6N-heading { font-size: 32px; }
-            .lD6N-hero-title { gap: 10px; }
+            .lD6N-hero { padding: 40px 0 40px; min-height: auto; }
+            .lD6N-hero-box { padding: 30px 20px; border-radius: 24px; }
+            .lD6N-hero-box::before, .lD6N-hero-box::after { width: 25px; height: 25px; }
+            .lD6N-hero-actions { flex-direction: column; gap: 12px; }
+            .lD6N-donation-box { padding: 40px 20px; border-radius: 24px; }
+            .lD6N-donation { padding: 20px 0 60px 0; }
+            .lD6N-hero-title { gap: 10px; flex-wrap: wrap; font-size: 34px; }
+            .lD6N-omega { font-size: 1.1em; }
             .lD6N-plans { grid-template-columns: 1fr; gap: 16px; }
             .lD6N-plan-card { padding: 24px; }
             .lD6N-cta-actions { flex-direction: column; width: 100%; gap: 12px; }
             .lD6N-btn-primary, .lD6N-btn-secondary { width: 100%; display: block; box-sizing: border-box; text-align: center; }
-            .lD6N-ip-box { flex-direction: column; padding: 20px; width: 100%; box-sizing: border-box; gap: 20px; }
-            .lD6N-ip-text { font-size: 18px; }
+            .lD6N-ip-widget { flex-direction: column; padding: 20px; width: 100%; box-sizing: border-box; gap: 15px; }
+            .lD6N-ip-text { font-size: 16px; margin-right: 0; }
+            .lD6N-copy-btn { width: 100%; justify-content: center; }
+            .splash-omega { font-size: 80px; }
+            .splash-text { font-size: 28px; }
+            .splash-progress { width: 180px; }
+            #cursor-glow { display: none; }
+            .lD6N-modal-content { padding: 25px 15px; }
         }
     </style>
 </head>
 <body>
 
-    <!-- Инициализация Telegram Web App -->
+    <canvas id="bg-canvas"></canvas>
+    <div id="cursor-glow"></div>
+
+    <!-- ЗАСТАВКА -->
+    <div id="splash-screen">
+        <div class="splash-content">
+            <div class="splash-omega-wrapper">
+                <div class="splash-ring"></div>
+                <div class="splash-ring-inner"></div>
+                <div class="splash-omega">Ω</div>
+            </div>
+            <div class="splash-text-wrapper">
+                <div class="splash-text">OMEGA SMP</div>
+                <div class="splash-season">Второй сезон</div>
+            </div>
+        </div>
+        <div class="splash-progress">
+            <div class="splash-progress-bar"></div>
+        </div>
+    </div>
+
     <script>
         if (window.Telegram && window.Telegram.WebApp) {
-            window.Telegram.WebApp.ready(); // Сообщаем, что страница загружена
-            window.Telegram.WebApp.expand(); // Раскрываем на весь экран
+            window.Telegram.WebApp.ready();
+            window.Telegram.WebApp.expand();
         }
     </script>
 
     <div class="lD6N-main-container">
-        <!-- ================= ШАПКА ================= -->
+        
+        <!-- ГЛАВНАЯ -->
         <section class="lD6N-hero">
-            <div class="lD6N-hero-glow"></div>
             <div class="lD6N-wrapper">
-                <h1 class="lD6N-hero-title">
-                    <span class="lD6N-omega">Ω</span>
-                    OMEGA SMP
-                    <span class="lD6N-omega">Ω</span>
-                </h1>
                 
-                <h2 class="lD6N-hero-subtitle">Второй сезон</h2>
-                <p class="lD6N-hero-desc">
-                    Добро пожаловать на наш уютный сервер! Здесь вас ждет ванильное выживание, интересные ивенты, дружное комьюнити и стабильность. Заходи, будет весело.
-                </p>
+                <div class="lD6N-hero-box">
+                    <div class="lD6N-badge">Сезон 2 уже здесь</div>
+                    
+                    <h1 class="lD6N-hero-title">
+                        <span class="lD6N-omega">Ω</span>
+                        OMEGA SMP
+                        <span class="lD6N-omega">Ω</span>
+                    </h1>
+                    
+                    <p class="lD6N-hero-desc">
+                        Добро пожаловать на наш уютный сервер! Здесь вас ждет ванильное выживание, интересные ивенты, дружное комьюнити и стабильность.
+                    </p>
 
-                <div class="lD6N-ip-box">
-                    <span class="lD6N-ip-text">OmegaSMP.mc-join.me</span>
-                    <button class="lD6N-btn-primary" onclick="copyText('OmegaSMP.mc-join.me', this)">Скопировать IP</button>
+                    <!-- Панель статуса (только версия) -->
+                    <div class="lD6N-server-stats">
+                        <div class="lD6N-stat-item">⚡ Версия: 1.21.11</div>
+                    </div>
+
+                    <div class="lD6N-ip-widget">
+                        <span class="lD6N-ip-text">OmegaSMP.mc-join.me</span>
+                        <button class="lD6N-copy-btn" onclick="copyText('OmegaSMP.mc-join.me', this)">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            Копировать
+                        </button>
+                    </div>
+
+                    <div class="lD6N-hero-actions">
+                        <div class="lD6N-action-btn-wrapper">
+                            <button class="lD6N-btn-action" onclick="openRulesModal()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A855F7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                Правила
+                            </button>
+                        </div>
+                        <div class="lD6N-action-btn-wrapper">
+                            <button class="lD6N-btn-action" onclick="openAdminModal()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A855F7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                                Админ состав
+                            </button>
+                        </div>
+                    </div>
                 </div>
+
             </div>
             <div class="lD6N-divider"></div>
         </section>
 
-        <!-- ================= ДОНАТ ================= -->
+        <!-- ДОНАТ -->
         <section id="donation" class="lD6N-donation lD6N-reveal">
             <div class="lD6N-wrapper">
-                <span class="lD6N-label">МАГАЗИН ПРИВИЛЕГИЙ</span>
-                <h2 class="lD6N-heading">Стань легендой Omega SMP</h2>
-                <p class="lD6N-subheading">Каждый вклад идет на развитие инфраструктуры и хостинга. Новые ранги с расширенными возможностями уже доступны.</p>
                 
-                <div class="lD6N-plans">
-                    <div class="lD6N-plan-card" data-id="star">
-                        <h3>Star</h3>
-                        <div class="lD6N-price">390 ₽</div>
-                        <p class="lD6N-period">навсегда</p>
-                        <ul class="lD6N-features">
-                            <li>Уникальный градиентный префикс [Star]</li>
-                            <li>Доступ к 5 точкам дома (/sethome)</li>
-                            <li>Возможность захода на полный сервер</li>
-                            <li>Набор ресурсов Star-kit раз в 24 часа</li>
-                            <li>Приоритет в очереди на сезонные ивенты 2026</li>
-                            <li>Доступ к базовым командам декора</li>
-                        </ul>
+                <div class="lD6N-donation-box">
+                    <span class="lD6N-label">МАГАЗИН ПРИВИЛЕГИЙ</span>
+                    <h2 class="lD6N-heading">Стань легендой Omega SMP</h2>
+                    <p class="lD6N-subheading">Каждый вклад идет на развитие инфраструктуры и хостинга. Новые ранги с расширенными возможностями уже доступны.</p>
+                    
+                    <div class="lD6N-plans">
+                        <div class="lD6N-plan-card" data-id="star">
+                            <h3>Star</h3>
+                            <div class="lD6N-price">199 ₽</div>
+                            <p class="lD6N-period">навсегда</p>
+                            <ul class="lD6N-features">
+                                <li>Уникальный префикс [Star]</li>
+                                <li>Доступ к 3 точкам дома (/sethome)</li>
+                                <li>Базовый кит Star-kit (железо, еда) раз в 24ч</li>
+                                <li>Возможность захода на полный сервер</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="lD6N-plan-card lD6N-accent" data-id="nova">
+                            <h3>Nova</h3>
+                            <div class="lD6N-price">349 ₽</div>
+                            <p class="lD6N-period">навсегда</p>
+                            <ul class="lD6N-features">
+                                <li>Все возможности ранга Star</li>
+                                <li>Градиентный префикс [Nova]</li>
+                                <li>Доступ к 6 точкам дома (/sethome)</li>
+                                <li>Улучшенный кит Nova-kit (алмазы, зелья) раз в 24ч</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="lD6N-plan-card" data-id="supernova">
+                            <h3>Supernova</h3>
+                            <div class="lD6N-price">499 ₽</div>
+                            <p class="lD6N-period">навсегда</p>
+                            <ul class="lD6N-features">
+                                <li>Все возможности ранга Nova</li>
+                                <li>Кастомный префикс (выбор цвета)</li>
+                                <li>Доступ к 10 точкам дома (/sethome)</li>
+                                <li>Элитный кит Supernova-kit (частичный незерит, элитры) раз в 24ч</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="lD6N-plan-card" data-id="omega">
+                            <h3>Omega</h3>
+                            <div class="lD6N-price">699 ₽</div>
+                            <p class="lD6N-period">навсегда</p>
+                            <ul class="lD6N-features">
+                                <li>Все возможности ранга Supernova</li>
+                                <li>Уникальный анимированный префикс [Omega]</li>
+                                <li>Максимум точек дома (15)</li>
+                                <li>Премиум кит Omega-kit (полный сет незерита, шалкеры) раз в 24ч</li>
+                                <li>Именная табличка на спавне</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="lD6N-plan-card" data-id="item-kit">
+                            <h3>Набор Ресурсов</h3>
+                            <div class="lD6N-price">149 ₽</div>
+                            <ul class="lD6N-features">
+                                <li>Сет алмазной брони (Защита IV)</li>
+                                <li>Инструменты с чарами</li>
+                                <li>Стак золотых яблок</li>
+                                <li>Элитры + фейерверки</li>
+                                <li>Шалкер-бокс</li>
+                                <li>Колба опыта (32 шт.)</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="lD6N-plan-card" data-id="unban">
+                            <h3>Разбан</h3>
+                            <div class="lD6N-price">249 ₽</div>
+                            <ul class="lD6N-features">
+                                <li>Разбан аккаунта</li>
+                                <li>Снятие всех предупреждений (варнов)</li>
+                                <li>Шанс начать с чистого листа</li>
+                                <li>Только при отсутствии грубых нарушений</li>
+                            </ul>
+                        </div>
                     </div>
-                    <div class="lD6N-plan-card lD6N-accent" data-id="nova">
-                        <h3>Nova</h3>
-                        <div class="lD6N-price">790 ₽</div>
-                        <p class="lD6N-period">навсегда</p>
-                        <ul class="lD6N-features">
-                            <li>Все возможности ранга Star</li>
-                            <li>Доступ к 15 точкам дома и 5 регионам</li>
-                            <li>Команда /fly в лобби и творческом хабе</li>
-                            <li>Уникальный эффект неонового следа Nova</li>
-                            <li>Скидка 10% на все будущие наборы ресурсов</li>
-                            <li>Слот в инвентаре для кастомного питомца</li>
-                        </ul>
-                    </div>
-                    <div class="lD6N-plan-card" data-id="supernova">
-                        <h3>Supernova</h3>
-                        <div class="lD6N-price">1490 ₽</div>
-                        <p class="lD6N-period">навсегда</p>
-                        <ul class="lD6N-features">
-                            <li>Все возможности ранга Nova</li>
-                            <li>Доступ к 50 точкам дома и 10 регионам</li>
-                            <li>Возможность изменять свой префикс (/tags)</li>
-                            <li>Доступ к эксклюзивным косметическим маскам</li>
-                            <li>Приоритетная поддержка в Discord 24/7</li>
-                            <li>Доступ к бета-тестированию новых механик 2026</li>
-                        </ul>
-                    </div>
-                    <div class="lD6N-plan-card" data-id="omega">
-                        <h3>Omega</h3>
-                        <div class="lD6N-price">2990 ₽</div>
-                        <p class="lD6N-period">навсегда</p>
-                        <ul class="lD6N-features">
-                            <li>Максимальный статус и безлимитные приваты</li>
-                            <li>Эксклюзивный анимированный префикс в табе</li>
-                            <li>Доступ к базе кастомных голов /hdb</li>
-                            <li>Право на создание собственного клана бесплатно</li>
-                            <li>Прямая связь с разработчиками в закрытом чате</li>
-                            <li>Именная табличка на Аллее Славы спавна</li>
-                        </ul>
-                    </div>
-                    <div class="lD6N-plan-card" data-id="item-kit">
-                        <h3>Набор Ресурсов</h3>
-                        <div class="lD6N-price">150 ₽</div>
-                        <ul class="lD6N-features">
-                            <li>Сет незеритовой брони (защита IV)</li>
-                            <li>Инструменты с чарами</li>
-                            <li>Стак золотых яблок</li>
-                            <li>Элитры с запасом фейерверков</li>
-                            <li>Шалкер-бокс</li>
-                            <li>Колба опыта (64 штуки)</li>
-                        </ul>
-                    </div>
-                    <div class="lD6N-plan-card" data-id="unban">
-                        <h3>Разбан</h3>
-                        <div class="lD6N-price">350 ₽</div>
-                        <ul class="lD6N-features">
-                            <li>Разбан аккаунта</li>
-                            <li>Снятие всех предупреждений (варнов)</li>
-                            <li>Шанс начать с чистого листа</li>
-                            <li>Только при отсутствии грубых нарушений</li>
-                        </ul>
+                    
+                    <div class="lD6N-cta-wrapper">
+                        <div class="lD6N-cta-note" id="v-c3bf333e391d422588372c0eca85478c">(Отвечаю в MAX быстрее)</div>
+                        <div class="lD6N-cta-actions">
+                            <button class="lD6N-btn-primary" onclick="copyText('@Sealmylov', this)" style="position: relative; z-index: 10;">Telegram: @Sealmylov</button>
+                            <button class="lD6N-btn-secondary" onclick="copyText('+79129147295', this)" style="position: relative; z-index: 10;">MAX: +79129147295</button>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="lD6N-cta-wrapper">
-                    <div class="lD6N-cta-note" id="v-c3bf333e391d422588372c0eca85478c">(Отвечаю в MAX быстрее)</div>
-                    <div class="lD6N-cta-actions">
-                        <button class="lD6N-btn-primary" onclick="copyText('@Sealmylov', this)" style="position: relative; z-index: 10;">Telegram: @Sealmylov</button>
-                        <button class="lD6N-btn-secondary" onclick="copyText('+79129147295', this)" style="position: relative; z-index: 10;">MAX: +79129147295</button>
-                    </div>
-                </div>
+
             </div>
         </section>
     </div>
 
+    <!-- МОДАЛКА: АДМИН СОСТАВ -->
+    <div id="adminModal" class="lD6N-modal-overlay" onclick="closeAdminModal(event)">
+        <div class="lD6N-modal-content" onclick="event.stopPropagation()">
+            <div class="lD6N-modal-close" onclick="closeAdminModal(event)">&times;</div>
+            
+            <h3 class="lD6N-modal-title">Команда сервера</h3>
+            
+            <div class="lD6N-admin-list">
+                <div class="lD6N-admin-card">
+                    <div class="lD6N-admin-avatar">👑</div>
+                    <div class="lD6N-admin-info">
+                        <span class="lD6N-admin-name">Sealmylov</span>
+                        <span class="lD6N-admin-role">Владелец</span>
+                    </div>
+                </div>
+                <div class="lD6N-admin-card">
+                    <div class="lD6N-admin-avatar">🛡️</div>
+                    <div class="lD6N-admin-info">
+                        <span class="lD6N-admin-name">Dave_PrimeSB</span>
+                        <span class="lD6N-admin-role">Главный Администратор</span>
+                    </div>
+                </div>
+                <div class="lD6N-admin-card">
+                    <div class="lD6N-admin-avatar">🛡️</div>
+                    <div class="lD6N-admin-info">
+                        <span class="lD6N-admin-name">ShatovskuiRoma</span>
+                        <span class="lD6N-admin-role">Главный Администратор</span>
+                    </div>
+                </div>
+            </div>
+            
+            <button class="lD6N-btn-download" onclick="downloadAdminForm()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                Скачать анкету
+            </button>
+            
+            <p style="font-size: 12px; color: rgba(224, 215, 245, 0.6); margin-top: 18px; line-height: 1.5; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; flex-shrink: 0;">
+                Скачайте файл, откройте и нажмите «Печать» -> «Сохранить как PDF».<br>
+                Отправьте анкету в <b>Telegram: @Sealmylov</b><br>или в <b>MAX: +79129147295</b>
+            </p>
+        </div>
+    </div>
+
+    <!-- МОДАЛКА: ПРАВИЛА -->
+    <div id="rulesModal" class="lD6N-modal-overlay" onclick="closeRulesModal(event)">
+        <div class="lD6N-modal-content" onclick="event.stopPropagation()">
+            <div class="lD6N-modal-close" onclick="closeRulesModal(event)">&times;</div>
+            
+            <h3 class="lD6N-modal-title">Правила сервера</h3>
+            
+            <div class="lD6N-rules-tabs">
+                <button class="lD6N-rule-tab-btn active" id="btn-players" onclick="switchRuleTab('players')">Для игроков</button>
+                <button class="lD6N-rule-tab-btn" id="btn-admins" onclick="switchRuleTab('admins')">Для Админов</button>
+            </div>
+
+            <div class="lD6N-rules-content-wrapper">
+                <!-- Контент: Игроки -->
+                <div id="players" class="lD6N-rule-tab-content active">
+                    <div class="lD6N-rule-card bad">
+                        <div class="lD6N-rule-icon">❌</div>
+                        <div class="lD6N-rule-text">
+                            <strong><span class="lD6N-rule-num">1.</span> Любые читы</strong>
+                            Запрещено использование сторонних программ, дающих преимущество (X-Ray, Fly, KillAura). Бан перманентный без разбана.
+                        </div>
+                    </div>
+                    <div class="lD6N-rule-card bad">
+                        <div class="lD6N-rule-icon">❌</div>
+                        <div class="lD6N-rule-text">
+                            <strong><span class="lD6N-rule-num">2.</span> Freecam</strong>
+                            Запрещено использование камеры сквозь блоки для разведки чужих баз и поиска ресурсов.
+                        </div>
+                    </div>
+                    <div class="lD6N-rule-card good">
+                        <div class="lD6N-rule-icon">✅</div>
+                        <div class="lD6N-rule-text">
+                            <strong><span class="lD6N-rule-num">3.</span> ReplayMod</strong>
+                            Разрешается использовать <b>только</b> если вы подозреваете игрока в читерстве для записи пруфов. Использовать для поиска баз запрещено.
+                        </div>
+                    </div>
+                    <div class="lD6N-rule-card bad">
+                        <div class="lD6N-rule-icon">❌</div>
+                        <div class="lD6N-rule-text">
+                            <strong><span class="lD6N-rule-num">4.</span> Лаг-машины и Редстоун</strong>
+                            Запрещено создание механизмов, вызывающих лаги. Запрещено строительство гигантских механизмов редстоуна (орбитальных пушек, TNT-дюперов).
+                        </div>
+                    </div>
+                    <div class="lD6N-rule-card bad">
+                        <div class="lD6N-rule-icon">❌</div>
+                        <div class="lD6N-rule-text">
+                            <strong><span class="lD6N-rule-num">5.</span> Гриферство</strong>
+                            Запрещена порча чужих построек и воровство из приватных сундуков.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Контент: Админы -->
+                <div id="admins" class="lD6N-rule-tab-content">
+                    <div class="lD6N-rule-card bad">
+                        <div class="lD6N-rule-icon">❌</div>
+                        <div class="lD6N-rule-text">
+                            <strong><span class="lD6N-rule-num">1.</span> Зарплаты нет</strong>
+                            Администрация — это волонтерская помощь. Вступая в состав, вы не получаете реальных денег или игровой валюты.
+                        </div>
+                    </div>
+                    <div class="lD6N-rule-card good">
+                        <div class="lD6N-rule-icon">✅</div>
+                        <div class="lD6N-rule-text">
+                            <strong><span class="lD6N-rule-num">2.</span> Реакция на жалобы</strong>
+                            При поступлении множества жалоб на игрока или при подозрении на читы, модератор <b>обязан</b> провести проверку.
+                        </div>
+                    </div>
+                    <div class="lD6N-rule-card good">
+                        <div class="lD6N-rule-icon">✅</div>
+                        <div class="lD6N-rule-text">
+                            <strong><span class="lD6N-rule-num">3.</span> Проверка, а не бан</strong>
+                            Запрещено банить "на горячую руку". Сначала проверьте игрока (спектатор, ReplayMod), и только при доказательствах выдавайте бан.
+                        </div>
+                    </div>
+                    <div class="lD6N-rule-card good">
+                        <div class="lD6N-rule-icon">✅</div>
+                        <div class="lD6N-rule-text">
+                            <strong><span class="lD6N-rule-num">4.</span> Обязательный Freecam (Модераторы)</strong>
+                            У модераторов всегда должен быть включен Freecam для оперативной проверки игроков.
+                        </div>
+                    </div>
+                    <div class="lD6N-rule-card good">
+                        <div class="lD6N-rule-icon">✅</div>
+                        <div class="lD6N-rule-text">
+                            <strong><span class="lD6N-rule-num">5.</span> Адекватность</strong>
+                            Запрещено использовать админ-команды для личной выгоды, телепортироваться к игрокам без причины или выдавать предметы.
+                        </div>
+                    </div>
+                    <div class="lD6N-rule-card good">
+                        <div class="lD6N-rule-icon">✅</div>
+                        <div class="lD6N-rule-text">
+                            <strong><span class="lD6N-rule-num">6.</span> Контроль состава</strong>
+                            Если на админа/модератора много жалоб, верховные администраторы (Владелец) вызовут независимого модератора для проверки его поведения.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // 1. Копирование текста с визуальным откликом и вибрацией (для Telegram)
+        // 1. Логика заставки
+        document.addEventListener("DOMContentLoaded", function() {
+            const splash = document.getElementById('splash-screen');
+            const hasSeenSplash = sessionStorage.getItem('omega_splash_seen');
+
+            if (hasSeenSplash) {
+                splash.style.display = 'none';
+            } else {
+                setTimeout(() => {
+                    splash.classList.add('hidden'); 
+                    sessionStorage.setItem('omega_splash_seen', 'true');
+                    setTimeout(() => { splash.style.display = 'none'; }, 1000);
+                }, 2800); 
+            }
+        });
+
+        // 2. Функция копирования
         function copyText(textToCopy, btnElement) {
             const textArea = document.createElement("textarea");
             textArea.value = textToCopy;
             textArea.style.position = "fixed";
             textArea.style.top = "-9999px";
             document.body.appendChild(textArea);
-            
             textArea.focus();
             textArea.select();
             textArea.setSelectionRange(0, 99999);
             
             try {
                 document.execCommand('copy');
-                
-                // Визуальный отклик
-                const originalText = btnElement.innerText;
+                const originalHTML = btnElement.innerHTML;
                 const originalBg = btnElement.style.background;
                 
-                btnElement.innerText = "Скопировано!";
+                btnElement.innerHTML = "Успешно!";
                 btnElement.style.background = "#22c55e"; 
-                btnElement.style.color = "#FFFFFF";
                 
-                // Вибро-отклик для Telegram
                 if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
                     window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
                 }
                 
                 setTimeout(() => {
-                    btnElement.innerText = originalText;
+                    btnElement.innerHTML = originalHTML;
                     btnElement.style.background = originalBg; 
                 }, 2000);
-                
             } catch (err) {
                 console.error('Ошибка копирования', err);
             }
-            
             document.body.removeChild(textArea);
         }
 
-        // 2. Анимация появления/исчезновения (IntersectionObserver работает идеально в чистом HTML)
+        // 3. Модальное окно Админов
+        function openAdminModal() {
+            document.getElementById('adminModal').classList.add('active');
+        }
+        function closeAdminModal(event) {
+            if (event) event.stopPropagation();
+            document.getElementById('adminModal').classList.remove('active');
+        }
+
+        // 4. Модальное окно Правил и Переключение вкладок
+        function openRulesModal() {
+            document.getElementById('rulesModal').classList.add('active');
+            switchRuleTab('players');
+        }
+        function closeRulesModal(event) {
+            if (event) event.stopPropagation();
+            document.getElementById('rulesModal').classList.remove('active');
+        }
+        function switchRuleTab(tabId) {
+            document.querySelectorAll('.lD6N-rule-tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.lD6N-rule-tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            document.getElementById('btn-' + tabId).classList.add('active');
+        }
+
+        // 5. Генерация и скачивание HTML файла
+        function downloadAdminForm() {
+            const htmlContent = `
+            <!DOCTYPE html>
+            <html lang="ru">
+            <head>
+                <meta charset="UTF-8">
+                <title>Анкета Админа Omega SMP</title>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Manrope:wght@800&display=swap');
+                    
+                    body { 
+                        font-family: 'Inter', sans-serif; 
+                        background-color: #0B0414; 
+                        color: #E0D7F5; 
+                        padding: 40px; 
+                        margin: 0; 
+                        display: flex; 
+                        justify-content: center;
+                    }
+                    .form-container { 
+                        max-width: 800px; 
+                        width: 100%; 
+                        background: linear-gradient(145deg, rgba(30, 15, 52, 0.8), rgba(15, 8, 25, 0.9)); 
+                        border: 1px solid rgba(168, 85, 247, 0.4); 
+                        border-radius: 24px; 
+                        padding: 50px; 
+                        box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+                        position: relative;
+                        overflow: hidden;
+                    }
+                    .form-container::before {
+                        content: 'Ω';
+                        position: absolute;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        font-size: 600px;
+                        color: rgba(168, 85, 247, 0.03);
+                        font-family: 'Times New Roman', serif;
+                        z-index: 0;
+                        pointer-events: none;
+                    }
+                    .content { position: relative; z-index: 1; }
+                    
+                    h1 { font-family: 'Manrope', sans-serif; color: #A855F7; text-align: center; font-size: 36px; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 20px rgba(168,85,247,0.5); }
+                    h2 { text-align: center; font-size: 16px; color: #C084FC; margin: 0 0 40px 0; font-weight: 400; }
+                    
+                    .question { margin-bottom: 30px; }
+                    .question-text { font-weight: 600; font-size: 16px; margin-bottom: 12px; color: #FFFFFF; }
+                    .line { border-bottom: 2px dashed rgba(168, 85, 247, 0.3); height: 35px; transition: border-color 0.3s; }
+                    .line:hover { border-bottom-color: #A855F7; }
+                    
+                    .special-question { background: rgba(168, 85, 247, 0.1); padding: 20px; border-radius: 12px; border-left: 4px solid #A855F7; margin-bottom: 30px; }
+                    .special-question .question-text { color: #C084FC; }
+                    .special-question .line { border-bottom-color: rgba(168, 85, 247, 0.5); }
+                    
+                    .footer { margin-top: 50px; text-align: center; font-size: 14px; color: #888; border-top: 1px solid rgba(168,85,247,0.2); padding-top: 20px; line-height: 1.6; }
+                    .footer strong { color: #A855F7; }
+
+                    @media print {
+                        body { background-color: #FFFFFF; padding: 0; display: block; }
+                        .form-container { background: transparent; border: none; box-shadow: none; padding: 0; }
+                        .form-container::before { display: none; }
+                        h1 { color: #6B21A8; text-shadow: none; }
+                        h2 { color: #666; }
+                        .question-text { color: #000; }
+                        .line { border-bottom: 1px solid #000; }
+                        .special-question { background: transparent; border: 1px solid #000; }
+                        .special-question .question-text { color: #000; }
+                        .footer { color: #666; border-top: 1px solid #ccc; }
+                        .footer strong { color: #000; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="form-container">
+                    <div class="content">
+                        <h1>OMEGA SMP</h1>
+                        <h2>Анкета для вступления в администрацию сервера</h2>
+                        
+                        <div class="question"><div class="question-text">1. Ваш игровой ник в Minecraft:</div><div class="line"></div></div>
+                        <div class="question"><div class="question-text">2. Ваш возраст (и часовой пояс):</div><div class="line"></div></div>
+                        <div class="question"><div class="question-text">3. Есть ли у вас опыт администрирования? (Если да, расскажите где и кем):</div><div class="line"></div><div class="line"></div></div>
+                        <div class="question"><div class="question-text">4. Сколько времени в день вы готовы уделять серверу?</div><div class="line"></div></div>
+                        <div class="question"><div class="question-text">5. Как вы обычно решаете конфликты между игроками?</div><div class="line"></div><div class="line"></div></div>
+                        <div class="question"><div class="question-text">6. Что вы сделаете, если увидите читера/грифера?</div><div class="line"></div></div>
+                        <div class="question"><div class="question-text">7. Почему вы хотите стать администратором именно нашего сервера?</div><div class="line"></div><div class="line"></div></div>
+                        <div class="question"><div class="question-text">8. Ваш Telegram, Discord или номер в MAX для связи:</div><div class="line"></div></div>
+                        
+                        <div class="special-question">
+                            <div class="question-text">9. Обязуетесь ли вы соблюдать ВСЕ правила сервера (и для игроков, и для администрации), кроме правила №2 для игроков (про Freecam)? (Обязательно ответить "Да, обязуюсь"):</div>
+                            <div class="line" style="border-bottom: 2px dashed #A855F7;"></div>
+                        </div>
+                        
+                        <div class="footer">
+                            Заполненную анкету отправьте в Telegram: <strong>@Sealmylov</strong><br>
+                            или в MAX: <strong>+79129147295</strong>
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+            `;
+
+            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'Анкета_Админа_OmegaSMP.html';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 6. Анимация доната при скролле
         document.addEventListener("DOMContentLoaded", function() {
             const donationSection = document.querySelector('.lD6N-donation');
-            
             if (donationSection) {
-                const observerOptions = {
-                    root: null,
-                    rootMargin: '0px',
-                    threshold: 0.1 
-                };
-
                 const observer = new IntersectionObserver((entries) => {
                     entries.forEach(entry => {
-                        if (entry.isIntersecting) {
-                            entry.target.classList.add('is-visible'); // Появился - выезжает
-                        } else {
-                            entry.target.classList.remove('is-visible'); // Ушел - прячется
-                        }
+                        if (entry.isIntersecting) entry.target.classList.add('is-visible');
+                        else entry.target.classList.remove('is-visible');
                     });
-                }, observerOptions);
-
+                }, { root: null, rootMargin: '0px', threshold: 0.1 });
                 observer.observe(donationSection);
             }
         });
+
+        // 7. Космический фон
+        const canvas = document.getElementById('bg-canvas');
+        const ctx = canvas.getContext('2d');
+        let particlesArray = [];
+        let w, h;
+
+        function initCanvas() {
+            w = canvas.width = window.innerWidth;
+            h = canvas.height = window.innerHeight;
+        }
+
+        class Particle {
+            constructor() {
+                this.x = Math.random() * w;
+                this.y = Math.random() * h;
+                this.size = Math.random() * 2 + 1;
+                this.speedX = Math.random() * 1 - 0.5;
+                this.speedY = Math.random() * 1 - 0.5;
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                if (this.x > w || this.x < 0) this.speedX *= -1;
+                if (this.y > h || this.y < 0) this.speedY *= -1;
+            }
+            draw() {
+                ctx.fillStyle = 'rgba(168, 85, 247, 0.5)';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function initParticles() {
+            particlesArray = [];
+            const numberOfParticles = (w * h) / 15000;
+            for (let i = 0; i < numberOfParticles; i++) {
+                particlesArray.push(new Particle());
+            }
+        }
+
+        function connectParticles() {
+            for (let a = 0; a < particlesArray.length; a++) {
+                for (let b = a; b < particlesArray.length; b++) {
+                    let dx = particlesArray[a].x - particlesArray[b].x;
+                    let dy = particlesArray[a].y - particlesArray[b].y;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < 120) {
+                        ctx.strokeStyle = `rgba(168, 85, 247, ${1 - distance/120})`;
+                        ctx.lineWidth = 0.5;
+                        ctx.beginPath();
+                        ctx.moveTo(particlesArray[a].x, particlesArray[a].y);
+                        ctx.lineTo(particlesArray[b].x, particlesArray[b].y);
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        function animateParticles() {
+            requestAnimationFrame(animateParticles);
+            ctx.clearRect(0, 0, w, h);
+            for (let i = 0; i < particlesArray.length; i++) {
+                particlesArray[i].update();
+                particlesArray[i].draw();
+            }
+            connectParticles();
+        }
+
+        window.addEventListener('resize', () => {
+            initCanvas();
+            initParticles();
+        });
+
+        initCanvas();
+        initParticles();
+        animateParticles();
+
+        // 8. Свечение за курсором
+        const cursorGlow = document.getElementById('cursor-glow');
+        if (window.matchMedia("(pointer: fine)").matches) {
+            document.addEventListener('mousemove', (e) => {
+                cursorGlow.style.opacity = '1';
+                cursorGlow.style.left = e.clientX + 'px';
+                cursorGlow.style.top = e.clientY + 'px';
+            });
+            document.addEventListener('mouseleave', () => {
+                cursorGlow.style.opacity = '0';
+            });
+        }
+
+        // 9. 3D-эффект карточек
+        if (window.matchMedia("(pointer: fine)").matches) {
+            const cards = document.querySelectorAll('.lD6N-plan-card');
+            cards.forEach(card => {
+                card.addEventListener('mousemove', (e) => {
+                    const rect = card.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+                    const rotateX = ((y - centerY) / centerY) * -5;
+                    const rotateY = ((x - centerX) / centerX) * 5;
+                    
+                    card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
+                });
+                card.addEventListener('mouseleave', () => {
+                    card.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`;
+                    card.style.transition = 'transform 0.4s ease';
+                });
+                card.addEventListener('mouseenter', () => {
+                    card.style.transition = 'none';
+                });
+            });
+        }
     </script>
 </body>
 </html>
