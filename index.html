@@ -4,147 +4,175 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Omega SMP</title>
-    
-    <!-- Подключаем шрифты -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- Официальный скрипт Telegram Web App -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-    <style>
-        /* Сброс стандартных отступов */
-        body, html {
-            margin: 0;
-            padding: 0;
-            background-color: #0B0414;
-            font-family: 'Inter', sans-serif;
-            -webkit-tap-highlight-color: transparent;
-            scroll-behavior: smooth;
-            overflow-x: hidden;
-        }
+    <!--
+    ═══════════════════════════════════════════════════════════════════════
+    ПОДСКАЗКИ ДЛЯ ДИПСИКА
+    ═══════════════════════════════════════════════════════════════════════
+    ПРОЕКТ: Omega SMP (Telegram Mini App)
 
+    КОНСТАНТЫ:
+      ADMIN_PASSWORD = "vX9#qL2$pR7!zM4*"
+      IMGBB_API_KEY  = '95becbf18679c01cbb68c93ca93e5104'
+
+    СТРУКТУРА БАЗЫ:
+      /orders/{id}             — заказы (поля promoCode, discountAmount, originalTotal)
+      /news/{id}               — новости
+      /forum/{id}              — жалобы (isPrivate true/false)
+      /config/wipeDate         — единая дата вайпа (timestamp ms)
+      /config/serverStatus     — 'online'|'maintenance'|'restart'|'offline'
+      /promocodes/{CODE}       — промокод { discountType:'percent'|'fixed', discount, maxUses, usedCount, active }
+
+    ТАЙМЕР ВАЙПА:
+      onValue /config/wipeDate. Кеш в localStorage. НЕ padStart — только тернарный.
+
+    СТАТУС СЕРВЕРА:
+      onValue /config/serverStatus → updateServerStatusUI(status).
+      setServerStatus() — из админки (вкладка Настройки).
+
+    ПРОМОКОДЫ:
+      appliedPromo — глобальная переменная { code, discountType, discount }.
+      Кеш в localStorage('omega_applied_promo').
+      applyPromo() → get /promocodes/{code} → валидация → appliedPromo.
+      confirmPayment() → runTransaction на usedCount++ (атомарно!).
+      При изменении корзины — calculateTotals() пересчитывает скидку.
+
+    АДМИН-ПАНЕЛЬ — 5 ВКЛАДОК:
+      orders, news, forum, promo, settings
+
+    КРИТИЧНО:
+      - <script type="module"> НЕ ОБРЫВАТЬ! (частая причина "всё сломалось")
+      - Прелоадер скрывается в обычном <script> через setTimeout.
+      - Импорты: getDatabase, ref, push, onValue, update, remove, set, get, runTransaction
+    ═══════════════════════════════════════════════════════════════════════
+    -->
+
+    <style>
+        body, html { margin: 0; padding: 0; background-color: #0B0414; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; overflow-x: hidden; }
         #bg-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
         #cursor-glow { position: fixed; width: 300px; height: 300px; background: radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, rgba(11, 4, 20, 0) 70%); border-radius: 50%; pointer-events: none; z-index: 1; transform: translate(-50%, -50%); transition: opacity 0.3s ease; opacity: 0; }
         .lD6N-main-container { background: transparent; overflow: hidden; position: relative; z-index: 2; }
 
-        /* ================= ПРЕЛОАДЕР ================= */
-        #splash-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #0B0414; background-image: radial-gradient(circle at center, rgba(168, 85, 247, 0.1) 0%, #0B0414 70%); z-index: 99999; display: flex; justify-content: center; align-items: center; transition: opacity 0.8s ease, visibility 0.8s ease; }
+        #splash-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #0B0414; background-image: radial-gradient(circle at center, rgba(168, 85, 247, 0.1) 0%, #0B0414 70%); z-index: 99999; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.8s ease, visibility 0.8s ease; }
         #splash-screen.hidden { opacity: 0; visibility: hidden; }
         .splash-content { display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
-        
         .splash-omega-wrapper { position: relative; display: flex; justify-content: center; align-items: center; width: 180px; height: 180px; margin-bottom: 20px; }
         .splash-ring { position: absolute; width: 100%; height: 100%; border: 2px solid transparent; border-top-color: #A855F7; border-bottom-color: #A855F7; border-radius: 50%; animation: spin 2s linear infinite; box-shadow: 0 0 30px rgba(168, 85, 247, 0.4); }
         .splash-ring-inner { position: absolute; width: 80%; height: 80%; border: 1px solid transparent; border-left-color: #C084FC; border-right-color: #C084FC; border-radius: 50%; animation: spin-reverse 3s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
         @keyframes spin-reverse { 100% { transform: rotate(-360deg); } }
-
         .splash-omega { font-family: 'Times New Roman', Times, serif; font-size: 100px; color: #C084FC; text-shadow: 0 0 40px rgba(168, 85, 247, 0.9); animation: pulseOmega 1.5s infinite alternate; z-index: 2; line-height: 1; }
-        
         .splash-text-wrapper { text-align: center; position: relative; }
         .splash-text { font-family: 'Manrope', sans-serif; font-size: 42px; font-weight: 800; color: #FFFFFF; text-transform: uppercase; letter-spacing: 4px; text-shadow: 0 0 20px rgba(168, 85, 247, 0.8); animation: textPulse 2s infinite alternate; }
         .splash-season { font-family: 'Manrope', sans-serif; font-size: 18px; font-weight: 600; color: #C084FC; text-transform: uppercase; letter-spacing: 3px; margin-top: 5px; }
-
         @keyframes pulseOmega { 0% { transform: scale(1); text-shadow: 0 0 20px rgba(168, 85, 247, 0.5); } 100% { transform: scale(1.05); text-shadow: 0 0 60px rgba(168, 85, 247, 1); } }
         @keyframes textPulse { 0% { opacity: 0.8; text-shadow: 0 0 10px rgba(168, 85, 247, 0.4); } 100% { opacity: 1; text-shadow: 0 0 30px rgba(168, 85, 247, 1); } }
-
         .splash-progress { margin-top: 40px; width: 250px; height: 4px; background: rgba(168, 85, 247, 0.2); border-radius: 4px; overflow: hidden; position: relative; }
         .splash-progress-bar { height: 100%; background: #A855F7; border-radius: 4px; box-shadow: 0 0 15px #A855F7; position: relative; width: 0%; animation: loadProgress 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
         .splash-progress-bar::after { content: ''; position: absolute; right: 0; top: 0; width: 10px; height: 100%; background: #FFF; box-shadow: 0 0 15px #FFF; border-radius: 50%; }
-
         @keyframes loadProgress { 0% { width: 0%; } 100% { width: 100%; } }
 
-        /* ================= ГЛАВНАЯ ================= */
-        .lD6N-hero { padding: 60px 0 60px; position: relative; text-align: center; min-height: 80vh; display: flex; flex-direction: column; justify-content: center; }
+        .lD6N-hero { padding: 40px 0 60px; position: relative; text-align: center; min-height: 80vh; display: flex; flex-direction: column; justify-content: center; }
         .lD6N-hero .lD6N-wrapper { position: relative; z-index: 3; max-width: 800px; margin: 0 auto; padding: 0 16px; display: flex; flex-direction: column; align-items: center; }
-        
-        .lD6N-hero-box { background: linear-gradient(145deg, rgba(20, 10, 35, 0.6), rgba(10, 5, 20, 0.8)); backdrop-filter: blur(20px); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 32px; padding: 50px 30px; box-shadow: 0 30px 60px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(168, 85, 247, 0.05); position: relative; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; }
+        .lD6N-hero-box { background: linear-gradient(145deg, rgba(20, 10, 35, 0.6), rgba(10, 5, 20, 0.8)); backdrop-filter: blur(20px); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 32px; padding: 40px 30px; box-shadow: 0 30px 60px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(168, 85, 247, 0.05); position: relative; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; }
         .lD6N-hero-box::before, .lD6N-hero-box::after { content: ''; position: absolute; width: 40px; height: 40px; pointer-events: none; border: 2px solid #A855F7; }
         .lD6N-hero-box::before { top: -1px; left: -1px; border-right: none; border-bottom: none; border-top-left-radius: 32px; }
         .lD6N-hero-box::after { bottom: -1px; right: -1px; border-left: none; border-top: none; border-bottom-right-radius: 32px; }
-
         .lD6N-badge { display: inline-block; background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.5); color: #E0D7F5; padding: 8px 24px; border-radius: 30px; font-size: 13px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 24px; box-shadow: 0 0 20px rgba(168, 85, 247, 0.3), inset 0 0 10px rgba(168, 85, 247, 0.2); text-shadow: 0 0 10px rgba(168, 85, 247, 0.8); }
-        
         .lD6N-hero-title { font-family: 'Manrope', sans-serif; font-size: clamp(40px, 7vw, 76px); color: #FFFFFF; margin: 0 0 16px 0; letter-spacing: -0.02em; font-weight: 800; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 20px; animation: titleGlow 3s infinite alternate; }
         @keyframes titleGlow { 0% { text-shadow: 0 0 20px rgba(168, 85, 247, 0.3); } 100% { text-shadow: 0 0 50px rgba(168, 85, 247, 0.7), 0 0 100px rgba(168, 85, 247, 0.4); } }
-        
         .lD6N-omega { font-family: 'Times New Roman', Times, serif; font-size: 1.2em; font-weight: 400; color: #A855F7; text-shadow: 0 0 20px rgba(168, 85, 247, 0.8); vertical-align: middle; animation: floatOmega 4s ease-in-out infinite; }
         .lD6N-omega:last-child { animation-delay: -2s; }
         @keyframes floatOmega { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-
-        .lD6N-hero-desc { color: #E0D7F5; opacity: 0.8; font-size: 17px; line-height: 1.6; max-width: 600px; margin: 0 auto 30px; font-weight: 500; }
-        
-        /* Панель статуса сервера (только версия) */
-        .lD6N-server-stats { display: flex; justify-content: center; align-items: center; margin-bottom: 30px; background: rgba(0,0,0,0.4); padding: 10px 24px; border-radius: 12px; border: 1px solid rgba(168, 85, 247, 0.2); }
+        .lD6N-hero-desc { color: #E0D7F5; opacity: 0.8; font-size: 17px; line-height: 1.6; max-width: 600px; margin: 0 auto 20px; font-weight: 500; }
+        .lD6N-server-stats { display: flex; justify-content: center; align-items: center; margin-bottom: 20px; background: rgba(0,0,0,0.4); padding: 10px 24px; border-radius: 12px; border: 1px solid rgba(168, 85, 247, 0.2); cursor: pointer; user-select: none;}
         .lD6N-stat-item { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: #E0D7F5; }
 
-        .lD6N-ip-widget { display: flex; align-items: center; background: linear-gradient(#0B0414, #0B0414) padding-box, linear-gradient(90deg, #A855F7, #6B21A8, #A855F7) border-box; border: 2px solid transparent; border-radius: 16px; padding: 8px 8px 8px 24px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(168, 85, 247, 0.1); margin-bottom: 30px; transition: box-shadow 0.3s ease, transform 0.3s ease; position: relative; overflow: hidden; }
+        .lD6N-status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; flex-shrink: 0; }
+        .lD6N-status-dot.online { background: #22c55e; box-shadow: 0 0 10px #22c55e; animation: statusPulse 2s ease-in-out infinite; }
+        .lD6N-status-dot.maintenance { background: #eab308; box-shadow: 0 0 10px #eab308; }
+        .lD6N-status-dot.restart { background: #3B82F6; box-shadow: 0 0 10px #3B82F6; }
+        .lD6N-status-dot.offline { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
+        @keyframes statusPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .lD6N-ip-widget { display: flex; align-items: center; background: linear-gradient(#0B0414, #0B0414) padding-box, linear-gradient(90deg, #A855F7, #6B21A8, #A855F7) border-box; border: 2px solid transparent; border-radius: 16px; padding: 8px 8px 8px 24px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(168, 85, 247, 0.1); margin-bottom: 20px; transition: box-shadow 0.3s ease, transform 0.3s ease; position: relative; overflow: hidden; }
         .lD6N-ip-widget:hover { box-shadow: 0 15px 40px rgba(168, 85, 247, 0.4), inset 0 0 30px rgba(168, 85, 247, 0.2); transform: translateY(-2px); }
         .lD6N-ip-text { font-family: 'Courier New', Courier, monospace; font-size: 18px; color: #C084FC; font-weight: 700; margin-right: 20px; letter-spacing: 1px; position: relative; z-index: 1; }
         .lD6N-ip-text::after { content: '_'; animation: blink 1s step-end infinite; color: #A855F7; }
         @keyframes blink { 50% { opacity: 0; } }
-        
         .lD6N-copy-btn { background: #A855F7; color: white; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4); }
         .lD6N-copy-btn:hover { background: #C084FC; box-shadow: 0 6px 20px rgba(168, 85, 247, 0.6); }
         .lD6N-copy-btn:active { transform: scale(0.95); }
-
-        .lD6N-hero-actions { display: flex; gap: 16px; justify-content: center; width: 100%; max-width: 450px; margin-top: 10px; }
-        .lD6N-action-btn-wrapper { position: relative; flex: 1; }
+        .lD6N-countdown { margin-top: 10px; margin-bottom: 30px; text-align: center; background: rgba(0,0,0,0.3); padding: 15px 25px; border-radius: 16px; border: 1px dashed rgba(168, 85, 247, 0.4); }
+        .lD6N-cd-title { font-size: 13px; color: #A855F7; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+        .lD6N-cd-timer { display: flex; gap: 15px; justify-content: center; align-items: center; }
+        .lD6N-cd-block { display: flex; flex-direction: column; align-items: center; min-width: 50px; }
+        .lD6N-cd-num { font-family: 'Manrope', sans-serif; font-size: 28px; font-weight: 800; color: #FFF; text-shadow: 0 0 10px rgba(168,85,247,0.5); line-height: 1; margin-bottom: 4px; text-align: center; width: 100%; }
+        .lD6N-cd-label { font-size: 11px; color: #888; text-transform: uppercase; font-weight: 600; }
+        .contact-actions { display: flex; gap: 10px; margin-bottom: 30px; justify-content: center; width: 100%; flex-wrap: wrap; }
+        .contact-btn { padding: 10px 20px; border-radius: 12px; font-weight: 700; text-decoration: none; border: 1px solid rgba(168, 85, 247, 0.4); color: #FFFFFF; transition: all 0.3s ease; cursor: pointer; display: flex; align-items: center; gap: 8px; background: rgba(168, 85, 247, 0.1); font-family: 'Inter', sans-serif; font-size: 14px;}
+        .contact-btn:hover { border-color: #A855F7; background: rgba(168, 85, 247, 0.3); }
+        .lD6N-hero-actions { display: flex; gap: 12px; justify-content: center; width: 100%; max-width: 600px; margin-top: 10px; flex-wrap: wrap;}
+        .lD6N-action-btn-wrapper { position: relative; flex: 1; min-width: 140px; margin-bottom: 10px;}
         .lD6N-action-btn-wrapper::before { content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(45deg, #A855F7, transparent, #A855F7); border-radius: 14px; z-index: -1; animation: borderGlow 3s linear infinite; opacity: 0.7; background-size: 200% 200%; }
         @keyframes borderGlow { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
         .lD6N-btn-action { padding: 14px 20px; border-radius: 12px; font-weight: 700; font-size: 14px; color: #FFFFFF; border: none; background: #0B0414; transition: all 0.3s ease; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; z-index: 1; width: 100%; white-space: nowrap;}
         .lD6N-btn-action:hover { background: rgba(168, 85, 247, 0.15); color: #C084FC; }
         .lD6N-btn-action svg { transition: transform 0.3s ease; }
         .lD6N-btn-action:hover svg { transform: scale(1.1) rotate(5deg); }
-
         .lD6N-divider { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 80%; max-width: 800px; height: 1px; background: linear-gradient(90deg, rgba(168, 85, 247, 0) 0%, rgba(168, 85, 247, 0.6) 50%, rgba(168, 85, 247, 0) 100%); box-shadow: 0 0 20px rgba(168, 85, 247, 0.5); }
 
-        /* ================= ДОНАТ ================= */
+        .lD6N-news-section { padding: 60px 0; position: relative; z-index: 3; }
+        .lD6N-news-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; text-align: left; }
+        .lD6N-news-card { background: linear-gradient(145deg, rgba(30, 15, 52, 0.8), rgba(15, 8, 25, 0.9)); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 20px; padding: 24px; transition: all 0.3s ease; position: relative;}
+        .lD6N-news-card:hover { border-color: rgba(168, 85, 247, 0.5); transform: translateY(-3px); box-shadow: 0 10px 25px rgba(0,0,0,0.5);}
+        .lD6N-news-card.important { border-left: 4px solid #ef4444; }
+        .lD6N-news-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .lD6N-news-title { font-family: 'Manrope', sans-serif; font-size: 20px; color: #FFFFFF; font-weight: 800; margin: 0; }
+        .lD6N-news-date { font-size: 12px; color: #888; margin-top: 4px; }
+        .lD6N-news-badge { background: #ef4444; color: white; font-size: 10px; font-weight: 800; padding: 4px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; margin-left: 10px; }
+        .lD6N-news-text { font-size: 14px; color: #E0D7F5; line-height: 1.6; white-space: pre-wrap; opacity: 0.9;}
+
         .lD6N-donation { padding: 60px 0 100px 0; color: #FFFFFF; position: relative; z-index: 3; }
         .lD6N-wrapper { max-width: 1170px; margin: 0 auto; padding: 0 16px; text-align: center; }
         .lD6N-donation-box { background: linear-gradient(145deg, rgba(20, 10, 35, 0.6), rgba(10, 5, 20, 0.8)); backdrop-filter: blur(20px); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 40px; padding: 60px 30px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8), inset 0 0 60px rgba(168, 85, 247, 0.05); position: relative; overflow: hidden; }
         .lD6N-donation-box::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 60%; height: 2px; background: linear-gradient(90deg, transparent, #A855F7, transparent); box-shadow: 0 0 20px #A855F7; }
-
         .lD6N-label { display: block; color: #A855F7; margin-bottom: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; font-size: 14px; }
         .lD6N-heading { font-family: 'Manrope', sans-serif; font-size: clamp(32px, 5vw, 48px); color: #FFFFFF; margin-bottom: 24px; letter-spacing: -0.02em; font-weight: 800; }
         .lD6N-subheading { max-width: 600px; margin: 0 auto 48px; font-weight: 500; color: #E0D7F5; opacity: 0.7; line-height: 1.5;}
         .lD6N-plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 48px; }
-        
-        .lD6N-plan-card { padding: 40px; background: linear-gradient(rgba(30, 15, 52, 0.8), rgba(30, 15, 52, 0.8)) padding-box, linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(168, 85, 247, 0.05)) border-box; border: 1px solid transparent; border-radius: 24px; transition: all 0.4s ease; display: flex; flex-direction: column; text-align: left; position: relative; }
+        .lD6N-plan-card { padding: 40px; background: linear-gradient(rgba(30, 15, 52, 0.8), rgba(30, 15, 52, 0.8)) padding-box, linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(168, 85, 247, 0.05)) border-box; border: 1px solid transparent; border-radius: 24px; transition: all 0.4s ease; display: flex; flex-direction: column; text-align: left; position: relative; cursor: pointer; }
         .lD6N-plan-card:hover { background: linear-gradient(rgba(40, 20, 70, 0.9), rgba(40, 20, 70, 0.9)) padding-box, linear-gradient(135deg, #A855F7, #C084FC) border-box; transform: translateY(-5px); box-shadow: 0 15px 35px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(168, 85, 247, 0.2); }
         .lD6N-accent { background: linear-gradient(rgba(40, 20, 70, 0.9), rgba(40, 20, 70, 0.9)) padding-box, linear-gradient(135deg, #A855F7, #6B21A8) border-box; border: 2px solid transparent; box-shadow: 0 0 20px rgba(168, 85, 247, 0.2); }
-        
         .lD6N-plan-card h3 { font-size: 24px; color: #A855F7; margin-bottom: 12px; margin-top: 0; font-weight: 800;}
         .lD6N-price { font-size: 36px; font-weight: 800; color: #FFFFFF; margin-bottom: 4px; }
         .lD6N-period { font-size: 14px; margin-bottom: 24px; color: rgba(224, 215, 245, 0.6); font-weight: 500;}
         .lD6N-features { list-style: none; padding: 0; font-size: 15px; font-weight: 500; flex-grow: 1; color: #E0D7F5; margin: 0; }
         .lD6N-features li { margin-bottom: 12px; display: flex; align-items: flex-start; opacity: 0.9; line-height: 1.4;}
         .lD6N-features li::before { content: '✦'; color: #A855F7; margin-right: 10px; flex-shrink: 0; }
-        
+        .add-to-cart-hint { margin-top: 15px; font-size: 12px; font-weight: 700; color: #A855F7; text-align: center; opacity: 0; transition: opacity 0.3s; text-transform: uppercase; letter-spacing: 1px;}
+        .lD6N-plan-card:hover .add-to-cart-hint { opacity: 1; }
         .lD6N-cta-note { margin-bottom: 16px; font-weight: 500; opacity: 0.8; font-size: 15px;}
         .lD6N-cta-actions { display: flex; gap: 16px; justify-content: center; align-items: center; }
         .lD6N-btn-primary { padding: 14px 28px; border-radius: 12px; font-weight: 700; text-decoration: none; background: #A855F7; color: #FFFFFF; transition: background 0.3s ease; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 15px; display: inline-block;}
         .lD6N-btn-primary:hover { background: #C084FC; }
         .lD6N-btn-secondary { padding: 14px 28px; border-radius: 12px; font-weight: 700; text-decoration: none; border: 1px solid rgba(168, 85, 247, 0.4); color: #FFFFFF; transition: all 0.3s ease; cursor: pointer; display: inline-block; background: transparent; font-family: 'Inter', sans-serif; font-size: 15px;}
         .lD6N-btn-secondary:hover { border-color: #A855F7; background: rgba(168, 85, 247, 0.1); }
-        #v-c3bf333e391d422588372c0eca85478c { font-weight: 800; font-size: 15px; text-decoration: none; color: #AF00FF; }
-
         .lD6N-reveal { opacity: 0; transform: translateY(80px); transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); will-change: opacity, transform; }
         .lD6N-reveal.is-visible { opacity: 1; transform: translateY(0); }
 
-        /* ================= МОДАЛЬНЫЕ ОКНА ================= */
         .lD6N-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(11, 4, 20, 0.9); backdrop-filter: blur(12px); z-index: 100000; display: flex; justify-content: center; align-items: center; opacity: 0; visibility: hidden; transition: opacity 0.4s ease, visibility 0.4s ease; }
         .lD6N-modal-overlay.active { opacity: 1; visibility: visible; }
-        
-        .lD6N-modal-content { background: linear-gradient(145deg, rgba(30, 15, 52, 0.95), rgba(15, 8, 25, 0.95)); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 28px; padding: 35px 25px; width: 90%; max-width: 480px; text-align: center; position: relative; transform: translateY(30px) scale(0.95); transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.05); max-height: 85vh; display: flex; flex-direction: column; }
+        .lD6N-modal-content { background: linear-gradient(145deg, rgba(30, 15, 52, 0.95), rgba(15, 8, 25, 0.95)); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 28px; padding: 35px 25px; width: 90%; max-width: 550px; text-align: center; position: relative; transform: translateY(30px) scale(0.95); transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.05); max-height: 85vh; display: flex; flex-direction: column; }
         .lD6N-modal-overlay.active .lD6N-modal-content { transform: translateY(0) scale(1); }
-        
         .lD6N-modal-close { position: absolute; top: 20px; right: 20px; width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; background: rgba(168, 85, 247, 0.1); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 50%; color: #A855F7; font-size: 22px; cursor: pointer; transition: all 0.3s; z-index: 10;}
         .lD6N-modal-close:hover { background: #A855F7; color: white; transform: rotate(90deg); }
         .lD6N-modal-title { font-family: 'Manrope', sans-serif; color: #FFFFFF; font-size: 24px; font-weight: 800; margin-top: 0; margin-bottom: 20px; text-shadow: 0 0 20px rgba(168, 85, 247, 0.4); flex-shrink: 0;}
 
-        /* Админ состав */
         .lD6N-admin-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 30px; overflow-y: auto; padding-right: 5px;}
         .lD6N-admin-card { display: flex; align-items: center; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(168, 85, 247, 0.15); border-radius: 20px; padding: 16px; text-align: left; transition: all 0.3s ease; position: relative; overflow: hidden; }
         .lD6N-admin-card:hover { background: rgba(168, 85, 247, 0.08); border-color: rgba(168, 85, 247, 0.5); transform: translateX(5px); box-shadow: -5px 0 15px -5px rgba(168, 85, 247, 0.3); }
@@ -156,37 +184,180 @@
         .lD6N-admin-role { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; letter-spacing: 0.5px; width: fit-content; }
         .lD6N-admin-card:nth-child(1) .lD6N-admin-role { background: rgba(168, 85, 247, 0.2); color: #D8B4FE; border: 1px solid rgba(168, 85, 247, 0.4); }
         .lD6N-admin-card:nth-child(2) .lD6N-admin-role, .lD6N-admin-card:nth-child(3) .lD6N-admin-role { background: rgba(59, 130, 246, 0.2); color: #93C5FD; border: 1px solid rgba(59, 130, 246, 0.4); }
-
         .lD6N-btn-download { width: 100%; padding: 16px; border-radius: 16px; background: linear-gradient(90deg, #A855F7, #C084FC); color: #FFFFFF; font-weight: 800; font-size: 16px; border: none; cursor: pointer; transition: all 0.3s ease; display: flex; justify-content: center; align-items: center; gap: 10px; box-shadow: 0 8px 25px rgba(168, 85, 247, 0.4); text-transform: uppercase; letter-spacing: 1px; flex-shrink: 0;}
         .lD6N-btn-download:hover { background: linear-gradient(90deg, #C084FC, #A855F7); transform: translateY(-2px); box-shadow: 0 12px 30px rgba(168, 85, 247, 0.6); }
+        .lD6N-btn-download:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        /* Вкладки правил */
-        .lD6N-rules-tabs { display: flex; gap: 10px; margin-bottom: 20px; background: rgba(0,0,0,0.4); padding: 6px; border-radius: 16px; flex-shrink: 0; border: 1px solid rgba(168, 85, 247, 0.1);}
-        .lD6N-rule-tab-btn { flex: 1; padding: 12px; border-radius: 10px; background: transparent; border: none; color: #E0D7F5; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.3s ease; font-family: 'Inter', sans-serif;}
-        .lD6N-rule-tab-btn.active { background: #A855F7; color: white; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4); }
-
-        .lD6N-rules-content-wrapper { text-align: left; overflow-y: auto; padding-right: 10px; flex-grow: 1;}
-        .lD6N-rules-content-wrapper::-webkit-scrollbar, .lD6N-admin-list::-webkit-scrollbar { width: 6px; }
-        .lD6N-rules-content-wrapper::-webkit-scrollbar-thumb, .lD6N-admin-list::-webkit-scrollbar-thumb { background: rgba(168, 85, 247, 0.3); border-radius: 10px; }
-
-        .lD6N-rule-tab-content { display: none; animation: fadeIn 0.3s ease; }
-        .lD6N-rule-tab-content.active { display: block; }
+        .lD6N-tabs { display: flex; gap: 8px; margin-bottom: 20px; background: rgba(0,0,0,0.4); padding: 6px; border-radius: 16px; flex-shrink: 0; border: 1px solid rgba(168, 85, 247, 0.1); flex-wrap: wrap;}
+        .lD6N-tab-btn { flex: 1; padding: 10px 6px; border-radius: 10px; background: transparent; border: none; color: #E0D7F5; font-weight: 700; font-size: 12px; cursor: pointer; transition: all 0.3s ease; font-family: 'Inter', sans-serif; min-width: 60px;}
+        .lD6N-tab-btn.active { background: #A855F7; color: white; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4); }
+        .lD6N-content-wrapper { text-align: left; overflow-y: auto; padding-right: 10px; flex-grow: 1;}
+        .lD6N-content-wrapper::-webkit-scrollbar, .lD6N-admin-list::-webkit-scrollbar { width: 6px; }
+        .lD6N-content-wrapper::-webkit-scrollbar-thumb, .lD6N-admin-list::-webkit-scrollbar-thumb { background: rgba(168, 85, 247, 0.3); border-radius: 10px; }
+        .lD6N-tab-content { display: none; animation: fadeIn 0.3s ease; }
+        .lD6N-tab-content.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-
         .lD6N-rule-card { margin-bottom: 16px; padding: 16px; border-radius: 16px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); display: flex; gap: 12px; align-items: flex-start; }
         .lD6N-rule-card.bad { border-left: 4px solid #ef4444; background: linear-gradient(90deg, rgba(239, 68, 68, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%); }
         .lD6N-rule-card.good { border-left: 4px solid #22c55e; background: linear-gradient(90deg, rgba(34, 197, 94, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%); }
-        
         .lD6N-rule-icon { font-size: 20px; line-height: 1; flex-shrink: 0; margin-top: 2px;}
         .lD6N-rule-text { font-size: 14px; line-height: 1.6; color: #E0D7F5; }
         .lD6N-rule-text strong { color: #FFFFFF; font-weight: 700; display: block; margin-bottom: 4px; font-size: 15px;}
         .lD6N-rule-num { color: #A855F7; font-weight: 800; margin-right: 4px; }
+
+        .forum-posts { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
+        .forum-post { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 16px; padding: 16px; text-align: left; }
+        .forum-post-header { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px dashed rgba(255,255,255,0.1); padding-bottom: 8px;}
+        .forum-post-author { font-weight: 800; color: #A855F7; font-size: 14px; }
+        .forum-post-date { font-size: 11px; color: #888; }
+        .forum-post-text { font-size: 14px; color: #E0D7F5; line-height: 1.5; white-space: pre-wrap; margin-bottom: 10px;}
+        .forum-media { max-width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(168, 85, 247, 0.3); display: block; }
+        .forum-form { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(168,85,247,0.2); }
+        .forum-form input, .forum-form textarea { background: rgba(0,0,0,0.4); border: 1px solid rgba(168,85,247,0.3); border-radius: 10px; padding: 12px; color: white; font-family: 'Inter', sans-serif; outline: none; }
+        .forum-form input:focus, .forum-form textarea:focus { border-color: #A855F7; }
+        .forum-form textarea { resize: vertical; min-height: 80px; }
+        .forum-file-input { background: rgba(168, 85, 247, 0.1) !important; border: 1px dashed rgba(168, 85, 247, 0.5) !important; padding: 10px !important; cursor: pointer; color: #C084FC !important; font-size: 13px !important; border-radius: 10px; font-family: 'Inter', sans-serif; }
+        .forum-file-input::file-selector-button { background: #A855F7; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-right: 10px; font-family: 'Inter', sans-serif; }
+
+        .admin-command-list { list-style: none; padding: 0; margin: 0; }
+        .admin-command-list li { margin-bottom: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 10px; border-left: 3px solid #A855F7; font-size: 14px; color: #E0D7F5; line-height: 1.5;}
+        .admin-command-list code { color: #4ade80; background: rgba(74, 222, 128, 0.1); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: 15px;}
+
+        .floating-cart { position: fixed; bottom: 30px; right: 30px; background: linear-gradient(135deg, #A855F7, #C084FC); color: white; width: 65px; height: 65px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; box-shadow: 0 10px 30px rgba(168, 85, 247, 0.6); z-index: 9999; transition: transform 0.3s, opacity 0.3s, visibility 0.3s; opacity: 0; visibility: hidden; transform: scale(0.5); }
+        .floating-cart.show { opacity: 1; visibility: visible; transform: scale(1); }
+        .floating-cart:hover { transform: scale(1.1); }
+        .cart-badge { position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; font-size: 14px; font-weight: 800; width: 24px; height: 24px; border-radius: 50%; display: flex; justify-content: center; align-items: center; border: 2px solid #0B0414; box-shadow: 0 2px 10px rgba(239, 68, 68, 0.5); }
+
+        .cart-alert { background: rgba(234, 179, 8, 0.1); border: 1px solid #eab308; color: #fde047; padding: 12px; border-radius: 12px; font-size: 13px; font-weight: 600; margin-bottom: 15px; text-align: left; line-height: 1.4;}
+        .cart-items { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 40vh; margin-bottom: 20px; padding-right: 5px;}
+        .cart-item { display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(168, 85, 247, 0.05) 0%, rgba(255,255,255,0.03) 100%); padding: 16px; border-radius: 16px; border: 1px solid rgba(168, 85, 247, 0.2); transition: all 0.3s; }
+        .cart-item:hover { border-color: rgba(168, 85, 247, 0.5); background: rgba(168, 85, 247, 0.1); }
+        .cart-item-info { display: flex; flex-direction: column; align-items: flex-start; text-align: left;}
+        .cart-item-title { font-weight: 700; color: #FFF; font-size: 16px; margin-bottom: 4px;}
+        .cart-item-price { color: #C084FC; font-size: 14px; font-weight: 800; }
+        .cart-item-qty { display: flex; align-items: center; gap: 12px; background: rgba(0,0,0,0.4); padding: 4px; border-radius: 10px;}
+        .qty-btn { background: rgba(168, 85, 247, 0.2); border: none; color: white; width: 28px; height: 28px; border-radius: 8px; cursor: pointer; font-weight: 800; font-size: 18px; display: flex; justify-content: center; align-items: center; transition: 0.2s;}
+        .qty-btn:hover { background: #A855F7; }
+        .qty-val { font-weight: 800; color: #FFF; min-width: 20px; text-align: center;}
+
+        .promo-input-row { display: flex; gap: 8px; margin-bottom: 10px; }
+        .promo-input-row input { flex: 1; padding: 12px 14px; background: rgba(0,0,0,0.4); border: 1px solid rgba(168,85,247,0.3); border-radius: 10px; color: #FFF; font-family: 'Inter', sans-serif; font-size: 14px; outline: none; box-sizing: border-box; text-transform: uppercase; }
+        .promo-input-row input:focus { border-color: #A855F7; }
+        .promo-input-row button { padding: 12px 18px; border-radius: 10px; background: #A855F7; color: #fff; border: none; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 13px; flex-shrink: 0; }
+        .promo-input-row button:hover { background: #C084FC; }
+        .promo-status-msg { font-size: 13px; margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; text-align: left; display: none;}
+        .promo-status-msg.ok { display: block; background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+        .promo-status-msg.err { display: block; background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+        .promo-applied { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; margin-bottom: 12px; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.4); border-radius: 10px; font-size: 14px; color: #4ade80; }
+        .promo-applied button { background: transparent; border: 1px solid rgba(239,68,68,0.5); color: #f87171; padding: 6px 12px; border-radius: 8px; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 12px; }
+
+        .cart-total-block { display: flex; flex-direction: column; margin-bottom: 20px; padding-top: 20px; border-top: 1px dashed rgba(168, 85, 247, 0.3); }
+        .cart-total-line { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: #aaa; margin-bottom: 6px; }
+        .cart-total-line.discount { color: #4ade80; font-weight: 700; }
+        .cart-total-line.final { font-size: 22px; font-weight: 800; color: #FFF; margin-bottom: 0; }
+        .cart-total-line.final span { color: #A855F7; text-shadow: 0 0 10px rgba(168, 85, 247, 0.5); }
+
+        .mc-nick-input-group { text-align: left; margin-bottom: 20px; }
+        .mc-nick-input-group label { display: block; color: #E0D7F5; font-size: 13px; margin-bottom: 8px; font-weight: 600; }
+        .mc-nick-input { width: 100%; padding: 14px 16px; background: rgba(0,0,0,0.4); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 12px; color: #FFF; font-size: 16px; font-family: 'Inter', sans-serif; outline: none; box-sizing: border-box; transition: all 0.3s;}
+        .mc-nick-input:focus { border-color: #A855F7; box-shadow: 0 0 15px rgba(168, 85, 247, 0.2); }
+        .gift-nick-input { border-color: #eab308 !important; }
+        .gift-nick-input:focus { box-shadow: 0 0 15px rgba(234, 179, 8, 0.3) !important; }
+        .fake-credit-card { background: linear-gradient(135deg, #2a1645 0%, #0d0618 100%); border: 1px solid rgba(168, 85, 247, 0.4); border-radius: 16px; padding: 20px; position: relative; box-shadow: 0 15px 35px rgba(0,0,0,0.6), inset 0 0 20px rgba(168,85,247,0.1); margin: 20px 0; text-align: left;}
+        .fake-credit-card::after { content: 'MIR'; position: absolute; bottom: 20px; right: 20px; font-family: 'Manrope', sans-serif; font-weight: 800; font-style: italic; font-size: 24px; color: rgba(255,255,255,0.8);}
+        .cc-chip { width: 40px; height: 30px; background: linear-gradient(135deg, #eab308 0%, #ca8a04 100%); border-radius: 6px; margin-bottom: 20px; position: relative; overflow: hidden;}
+        .cc-chip::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: rgba(0,0,0,0.3); }
+        .cc-chip::after { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgba(0,0,0,0.3); }
+        .cc-number { font-family: monospace; font-size: 22px; color: #FFF; letter-spacing: 2px; display: flex; justify-content: space-between; align-items: center;}
+        .copy-card-btn { background: rgba(168, 85, 247, 0.2); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer; font-weight: bold; transition: 0.3s;}
+        .copy-card-btn:hover { background: #A855F7; color: white;}
+
+        .admin-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        .admin-stat-card { background: rgba(168, 85, 247, 0.1); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 12px; padding: 15px; text-align: center; }
+        .admin-stat-val { font-size: 24px; font-weight: 800; color: #FFF; }
+        .admin-stat-label { font-size: 12px; color: #C084FC; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;}
+        .order-list { display: flex; flex-direction: column; gap: 15px; overflow-y: auto; max-height: 50vh; text-align: left; padding-right: 5px;}
+        .order-card { background: linear-gradient(145deg, rgba(30, 15, 52, 0.9), rgba(15, 8, 25, 0.9)); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 16px; padding: 20px; transition: 0.3s;}
+        .order-card:hover { border-color: rgba(168, 85, 247, 0.6); }
+        .order-card.pending-order { border-left: 4px solid #eab308; }
+        .order-card.delivered-order { border-left: 4px solid #22c55e; }
+        .order-card.refunded-order { border-left: 4px solid #ef4444; }
+        .order-header { display: flex; justify-content: space-between; border-bottom: 1px dashed rgba(255,255,255,0.1); padding-bottom: 12px; margin-bottom: 12px; align-items: center;}
+        .order-id { font-weight: 800; color: #A855F7; font-size: 16px; }
+        .order-status { font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;}
+        .status-pending { background: rgba(234, 179, 8, 0.15); color: #fde047; border: 1px solid rgba(234, 179, 8, 0.3); }
+        .status-delivered { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+        .status-refunded { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .delivery-box { background: rgba(0,0,0,0.4); border: 1px solid rgba(168,85,247,0.3); border-radius: 12px; padding: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;}
+        .delivery-header { display: flex; justify-content: space-between; align-items: center;}
+        .delivery-nick { font-family: monospace; font-size: 16px; color: #FFF; font-weight: 800; }
+        .delivery-item { font-size: 12px; color: #C084FC; font-weight: 700; background: rgba(168,85,247,0.2); padding: 2px 8px; border-radius: 8px;}
+        .delivery-cmd-row { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);}
+        .delivery-cmd-text { font-family: monospace; font-size: 13px; color: #4ade80; user-select: all; word-break: break-all;}
+        .copy-cmd-btn { background: #A855F7; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; transition: 0.2s; flex-shrink: 0; margin-left: 10px;}
+        .copy-cmd-btn:hover { background: #C084FC; }
+        .order-items-text { font-size: 14px; color: #E0D7F5; margin-bottom: 10px; line-height: 1.5;}
+        .order-total { font-size: 18px; font-weight: 800; color: #FFF; text-align: right; margin-bottom: 15px;}
+        .order-total span { color: #A855F7; }
+        .refund-reason-box { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 12px; color: #fca5a5; text-align: left;}
+        .action-buttons { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;}
+        .action-buttons button { flex: 1; min-width: 90px;}
+        .btn-refund { background: transparent; border: 1px solid #ef4444; color: #ef4444; padding: 10px 15px; border-radius: 10px; cursor: pointer; font-weight: 700; transition: 0.3s; font-family: 'Inter', sans-serif;}
+        .btn-refund:hover { background: #ef4444; color: white; }
+        .admin-delete-btn { background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #f87171; padding: 10px 15px; border-radius: 10px; cursor: pointer; font-weight: 700; transition: 0.3s; font-family: 'Inter', sans-serif; display: inline-flex; align-items: center; gap: 6px; justify-content: center;}
+        .admin-delete-btn:hover { background: #ef4444; color: white; }
+
+        .admin-news-item { background: linear-gradient(145deg, rgba(30, 15, 52, 0.9), rgba(15, 8, 25, 0.9)); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 14px; padding: 15px; margin-bottom: 12px; text-align: left; }
+        .admin-news-item-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 10px;}
+        .admin-news-item-title { font-weight: 800; color: #FFF; font-size: 15px; }
+        .admin-news-item-date { font-size: 11px; color: #888; margin-top: 3px;}
+        .admin-news-item-text { font-size: 13px; color: #E0D7F5; line-height: 1.5; white-space: pre-wrap; margin-bottom: 10px; max-height: 120px; overflow: hidden;}
+        .admin-news-item-actions { display: flex; justify-content: flex-end; gap: 8px; }
+        .admin-news-item .badge-important { background:#ef4444; color:#fff; font-size:10px; font-weight:800; padding:3px 8px; border-radius:6px; text-transform:uppercase; flex-shrink:0;}
+
+        .admin-forum-item { background: linear-gradient(145deg, rgba(30, 15, 52, 0.9), rgba(15, 8, 25, 0.9)); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 14px; padding: 15px; margin-bottom: 12px; text-align: left; }
+        .admin-forum-item.private { border-left: 4px solid #eab308; }
+        .admin-forum-item.public { border-left: 4px solid #A855F7; }
+        .admin-forum-item-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 10px; flex-wrap: wrap;}
+        .admin-forum-item-author { font-weight: 800; color: #C084FC; font-size: 14px; }
+        .admin-forum-item-author.is-admin { color: #eab308; }
+        .admin-forum-item-date { font-size: 11px; color: #888; }
+        .admin-forum-item-text { font-size: 13px; color: #E0D7F5; line-height: 1.5; white-space: pre-wrap; margin-bottom: 10px;}
+        .admin-forum-item-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;}
+        .admin-forum-item-media { max-width: 100px; border-radius: 8px; border: 1px solid rgba(168,85,247,0.3);}
+        .admin-forum-tag { font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px;}
+        .admin-forum-tag.priv { background: rgba(234,179,8,0.2); color: #fde047; border: 1px solid rgba(234,179,8,0.4);}
+        .admin-forum-tag.pub { background: rgba(168,85,247,0.2); color: #D8B4FE; border: 1px solid rgba(168,85,247,0.4);}
+
+        .admin-news-form { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 16px; border: 1px solid rgba(168,85,247,0.2);}
+        .admin-news-form input[type="text"], .admin-news-form input[type="number"], .admin-news-form select, .admin-news-form textarea { width: 100%; padding: 12px; background: rgba(0,0,0,0.4); border: 1px solid rgba(168,85,247,0.3); border-radius: 10px; color: white; font-family: 'Inter', sans-serif; outline: none; box-sizing: border-box;}
+        .admin-news-form input[type="text"]:focus, .admin-news-form input[type="number"]:focus, .admin-news-form select:focus, .admin-news-form textarea:focus { border-color: #A855F7; }
+        .admin-news-form textarea { resize: vertical; min-height: 80px; }
+        .admin-news-checkbox { display: flex; align-items: center; gap: 8px; color: #E0D7F5; font-size: 14px; cursor: pointer;}
+        .admin-news-checkbox input { width: 18px; height: 18px; accent-color: #A855F7; cursor: pointer;}
+
+        .promo-card { background: linear-gradient(145deg, rgba(30,15,52,0.9), rgba(15,8,25,0.9)); border: 1px solid rgba(168,85,247,0.3); border-radius: 12px; padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; text-align: left;}
+        .promo-card.inactive { opacity: 0.5; border-color: rgba(255,255,255,0.1); }
+        .promo-card-code { font-family: 'Courier New', monospace; font-weight: 800; font-size: 16px; color: #C084FC; letter-spacing: 1px; margin-bottom: 4px; word-break: break-all;}
+        .promo-card-meta { font-size: 12px; color: #aaa; line-height: 1.5;}
+        .promo-card-meta b { color: #FFF; }
+        .promo-card-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0;}
+        .promo-card-actions button { padding: 6px 10px; font-size: 11px; border-radius: 8px; border: none; cursor: pointer; font-weight: 700; font-family: 'Inter', sans-serif; }
+        .promo-toggle-btn { background: rgba(168,85,247,0.15); color: #C084FC; border: 1px solid rgba(168,85,247,0.4) !important; }
+        .promo-toggle-btn:hover { background: #A855F7; color: #fff; }
+
+        .wipe-date-display { padding: 12px; background: rgba(168,85,247,0.1); border: 1px solid rgba(168,85,247,0.3); border-radius: 10px; color: #C084FC; font-family: monospace; font-size: 15px; font-weight: 700; text-align: center; }
+
+        .video-error-content { max-width: 400px; }
+        .video-error-text { color: #E0D7F5; font-size: 15px; line-height: 1.6; margin-bottom: 25px; }
+        .video-error-buttons { display: flex; flex-direction: column; gap: 10px; }
 
         @media (max-width: 768px) {
             .lD6N-hero { padding: 40px 0 40px; min-height: auto; }
             .lD6N-hero-box { padding: 30px 20px; border-radius: 24px; }
             .lD6N-hero-box::before, .lD6N-hero-box::after { width: 25px; height: 25px; }
             .lD6N-hero-actions { flex-direction: column; gap: 12px; }
+            .lD6N-action-btn-wrapper { width: 100%; margin-bottom: 5px; }
             .lD6N-donation-box { padding: 40px 20px; border-radius: 24px; }
             .lD6N-donation { padding: 20px 0 60px 0; }
             .lD6N-hero-title { gap: 10px; flex-wrap: wrap; font-size: 34px; }
@@ -198,11 +369,18 @@
             .lD6N-ip-widget { flex-direction: column; padding: 20px; width: 100%; box-sizing: border-box; gap: 15px; }
             .lD6N-ip-text { font-size: 16px; margin-right: 0; }
             .lD6N-copy-btn { width: 100%; justify-content: center; }
+            .contact-actions { flex-direction: column; width: 100%; }
+            .contact-btn { width: 100%; justify-content: center; box-sizing: border-box; }
             .splash-omega { font-size: 80px; }
             .splash-text { font-size: 28px; }
             .splash-progress { width: 180px; }
             #cursor-glow { display: none; }
             .lD6N-modal-content { padding: 25px 15px; }
+            .floating-cart { bottom: 20px; right: 20px; width: 55px; height: 55px; }
+            .cc-number { font-size: 18px; }
+            .lD6N-news-grid { grid-template-columns: 1fr; }
+            .action-buttons { flex-wrap: wrap; }
+            .lD6N-tab-btn { font-size: 11px; padding: 8px 4px; min-width: 50px;}
         }
     </style>
 </head>
@@ -211,7 +389,11 @@
     <canvas id="bg-canvas"></canvas>
     <div id="cursor-glow"></div>
 
-    <!-- ЗАСТАВКА -->
+    <div id="floatingCart" class="floating-cart" onclick="openCartModal()">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+        <div class="cart-badge" id="cartBadge">0</div>
+    </div>
+
     <div id="splash-screen">
         <div class="splash-content">
             <div class="splash-omega-wrapper">
@@ -234,30 +416,38 @@
             window.Telegram.WebApp.ready();
             window.Telegram.WebApp.expand();
         }
+        (function() {
+            function hideSplash() {
+                var splash = document.getElementById('splash-screen');
+                if (splash) splash.classList.add('hidden');
+            }
+            setTimeout(hideSplash, 2900);
+            setTimeout(hideSplash, 6000);
+        })();
     </script>
 
     <div class="lD6N-main-container">
-        
-        <!-- ГЛАВНАЯ -->
         <section class="lD6N-hero">
             <div class="lD6N-wrapper">
-                
                 <div class="lD6N-hero-box">
                     <div class="lD6N-badge">Сезон 2 уже здесь</div>
-                    
                     <h1 class="lD6N-hero-title">
                         <span class="lD6N-omega">Ω</span>
                         OMEGA SMP
                         <span class="lD6N-omega">Ω</span>
                     </h1>
-                    
                     <p class="lD6N-hero-desc">
                         Добро пожаловать на наш уютный сервер! Здесь вас ждет ванильное выживание, интересные ивенты, дружное комьюнити и стабильность.
                     </p>
 
-                    <!-- Панель статуса (только версия) -->
-                    <div class="lD6N-server-stats">
-                        <div class="lD6N-stat-item">⚡ Версия: 1.21.11</div>
+                    <!-- Статус сервера (5 кликов = вход в админку) -->
+                    <div class="lD6N-server-stats" id="secretAdminBtn">
+                        <div class="lD6N-stat-item">
+                            <span class="lD6N-status-dot online" id="serverStatusDot"></span>
+                            <span id="serverStatusText">Загрузка...</span>
+                            <span style="color: #888; margin: 0 4px;">·</span>
+                            <span>1.21.11</span>
+                        </div>
                     </div>
 
                     <div class="lD6N-ip-widget">
@@ -265,6 +455,27 @@
                         <button class="lD6N-copy-btn" onclick="copyText('OmegaSMP.mc-join.me', this)">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                             Копировать
+                        </button>
+                    </div>
+
+                    <div class="lD6N-countdown">
+                        <div class="lD6N-cd-title">До вайпа осталось:</div>
+                        <div class="lD6N-cd-timer">
+                            <div class="lD6N-cd-block"><span class="lD6N-cd-num" id="cd-days">00</span><span class="lD6N-cd-label">дн</span></div>
+                            <div class="lD6N-cd-block"><span class="lD6N-cd-num" id="cd-hours">00</span><span class="lD6N-cd-label">ч</span></div>
+                            <div class="lD6N-cd-block"><span class="lD6N-cd-num" id="cd-mins">00</span><span class="lD6N-cd-label">мин</span></div>
+                            <div class="lD6N-cd-block"><span class="lD6N-cd-num" id="cd-secs">00</span><span class="lD6N-cd-label">сек</span></div>
+                        </div>
+                    </div>
+
+                    <div class="contact-actions">
+                        <button class="contact-btn" onclick="copyText('@Sealmylov', this)">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                            Telegram: @Sealmylov
+                        </button>
+                        <button class="contact-btn" onclick="copyText('+79129147295', this)">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                            MAX: +7 912 914-72-95
                         </button>
                     </div>
 
@@ -281,24 +492,48 @@
                                 Админ состав
                             </button>
                         </div>
+                        <div class="lD6N-action-btn-wrapper">
+                            <button class="lD6N-btn-action" onclick="openMyOrdersModal()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A855F7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+                                Мои заказы
+                            </button>
+                        </div>
+                        <div class="lD6N-action-btn-wrapper">
+                            <button class="lD6N-btn-action" onclick="openForumModal()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A855F7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                                Форум
+                            </button>
+                        </div>
+                        <div class="lD6N-action-btn-wrapper">
+                            <button class="lD6N-btn-action" onclick="openAdminInfoModal()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A855F7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                                Инфо для админов
+                            </button>
+                        </div>
                     </div>
                 </div>
-
             </div>
             <div class="lD6N-divider"></div>
         </section>
 
-        <!-- ДОНАТ -->
+        <section id="news" class="lD6N-news-section lD6N-reveal">
+            <div class="lD6N-wrapper">
+                <span class="lD6N-label">НОВОСТИ И АНОНСЫ</span>
+                <h2 class="lD6N-heading">Что нового?</h2>
+                <div class="lD6N-news-grid" id="newsContainer">
+                    <p style="color: #888; text-align: center; grid-column: 1/-1;">Загрузка новостей...</p>
+                </div>
+            </div>
+        </section>
+
         <section id="donation" class="lD6N-donation lD6N-reveal">
             <div class="lD6N-wrapper">
-                
                 <div class="lD6N-donation-box">
                     <span class="lD6N-label">МАГАЗИН ПРИВИЛЕГИЙ</span>
                     <h2 class="lD6N-heading">Стань легендой Omega SMP</h2>
-                    <p class="lD6N-subheading">Каждый вклад идет на развитие инфраструктуры и хостинга. Новые ранги с расширенными возможностями уже доступны.</p>
-                    
+                    <p class="lD6N-subheading">Нажмите на карточку, чтобы добавить товар в корзину. Каждый вклад идет на развитие инфраструктуры и хостинга.</p>
                     <div class="lD6N-plans">
-                        <div class="lD6N-plan-card" data-id="star">
+                        <div class="lD6N-plan-card" data-id="star" onclick="addToCart('star', 'Star', 199, this)">
                             <h3>Star</h3>
                             <div class="lD6N-price">199 ₽</div>
                             <p class="lD6N-period">навсегда</p>
@@ -308,9 +543,9 @@
                                 <li>Базовый кит Star-kit (железо, еда) раз в 24ч</li>
                                 <li>Возможность захода на полный сервер</li>
                             </ul>
+                            <div class="add-to-cart-hint">+ В корзину</div>
                         </div>
-                        
-                        <div class="lD6N-plan-card lD6N-accent" data-id="nova">
+                        <div class="lD6N-plan-card lD6N-accent" data-id="nova" onclick="addToCart('nova', 'Nova', 349, this)">
                             <h3>Nova</h3>
                             <div class="lD6N-price">349 ₽</div>
                             <p class="lD6N-period">навсегда</p>
@@ -320,9 +555,9 @@
                                 <li>Доступ к 6 точкам дома (/sethome)</li>
                                 <li>Улучшенный кит Nova-kit (алмазы, зелья) раз в 24ч</li>
                             </ul>
+                            <div class="add-to-cart-hint">+ В корзину</div>
                         </div>
-                        
-                        <div class="lD6N-plan-card" data-id="supernova">
+                        <div class="lD6N-plan-card" data-id="supernova" onclick="addToCart('supernova', 'Supernova', 499, this)">
                             <h3>Supernova</h3>
                             <div class="lD6N-price">499 ₽</div>
                             <p class="lD6N-period">навсегда</p>
@@ -332,9 +567,9 @@
                                 <li>Доступ к 10 точкам дома (/sethome)</li>
                                 <li>Элитный кит Supernova-kit (частичный незерит, элитры) раз в 24ч</li>
                             </ul>
+                            <div class="add-to-cart-hint">+ В корзину</div>
                         </div>
-                        
-                        <div class="lD6N-plan-card" data-id="omega">
+                        <div class="lD6N-plan-card" data-id="omega" onclick="addToCart('omega', 'Omega', 699, this)">
                             <h3>Omega</h3>
                             <div class="lD6N-price">699 ₽</div>
                             <p class="lD6N-period">навсегда</p>
@@ -345,9 +580,9 @@
                                 <li>Премиум кит Omega-kit (полный сет незерита, шалкеры) раз в 24ч</li>
                                 <li>Именная табличка на спавне</li>
                             </ul>
+                            <div class="add-to-cart-hint">+ В корзину</div>
                         </div>
-                        
-                        <div class="lD6N-plan-card" data-id="item-kit">
+                        <div class="lD6N-plan-card" data-id="item-kit" onclick="addToCart('item-kit', 'Набор Ресурсов', 149, this)">
                             <h3>Набор Ресурсов</h3>
                             <div class="lD6N-price">149 ₽</div>
                             <ul class="lD6N-features">
@@ -358,9 +593,9 @@
                                 <li>Шалкер-бокс</li>
                                 <li>Колба опыта (32 шт.)</li>
                             </ul>
+                            <div class="add-to-cart-hint">+ В корзину</div>
                         </div>
-                        
-                        <div class="lD6N-plan-card" data-id="unban">
+                        <div class="lD6N-plan-card" data-id="unban" onclick="addToCart('unban', 'Разбан', 249, this)">
                             <h3>Разбан</h3>
                             <div class="lD6N-price">249 ₽</div>
                             <ul class="lD6N-features">
@@ -369,516 +604,1317 @@
                                 <li>Шанс начать с чистого листа</li>
                                 <li>Только при отсутствии грубых нарушений</li>
                             </ul>
-                        </div>
-                    </div>
-                    
-                    <div class="lD6N-cta-wrapper">
-                        <div class="lD6N-cta-note" id="v-c3bf333e391d422588372c0eca85478c">(Отвечаю в MAX быстрее)</div>
-                        <div class="lD6N-cta-actions">
-                            <button class="lD6N-btn-primary" onclick="copyText('@Sealmylov', this)" style="position: relative; z-index: 10;">Telegram: @Sealmylov</button>
-                            <button class="lD6N-btn-secondary" onclick="copyText('+79129147295', this)" style="position: relative; z-index: 10;">MAX: +79129147295</button>
+                            <div class="add-to-cart-hint">+ В корзину</div>
                         </div>
                     </div>
                 </div>
-
             </div>
         </section>
     </div>
 
-    <!-- МОДАЛКА: АДМИН СОСТАВ -->
+    <!-- КОРЗИНА (с промокодом) -->
+    <div id="cartModal" class="lD6N-modal-overlay" onclick="closeCartModal(event)">
+        <div class="lD6N-modal-content" onclick="event.stopPropagation()">
+            <div class="lD6N-modal-close" onclick="closeCartModal(event)">&times;</div>
+            <h3 class="lD6N-modal-title" id="cartModalTitle">Ваша корзина</h3>
+            <div id="cartView" style="overflow-y: auto;">
+                <div id="cartAlert" class="cart-alert" style="display: none;">
+                    <b>ВНИМАНИЕ:</b> Если вы покупаете донат только для себя, НЕ НАДО ПОКУПАТЬ 2 (или несколько) ДОНАТОВ. Если вы покупаете несколько — они считаются подарком, и вы обязаны вписать ники получателей на следующем шаге.
+                </div>
+                <div class="cart-items" id="cartItemsContainer"></div>
+
+                <div id="promoInputRow" class="promo-input-row">
+                    <input type="text" id="promoCodeInput" placeholder="Промокод" oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9_]/g, '')" maxlength="20">
+                    <button onclick="applyPromo()">Применить</button>
+                </div>
+                <div id="promoAppliedRow" class="promo-applied" style="display:none;">
+                    <span>🎟 <b id="promoAppliedCode"></b></span>
+                    <button onclick="removePromo()">Убрать</button>
+                </div>
+                <div id="promoStatus" class="promo-status-msg"></div>
+
+                <div class="cart-total-block">
+                    <div class="cart-total-line" id="cartOriginalTotalRow" style="display: none;">
+                        <span>Сумма:</span>
+                        <span id="cartOriginalTotal">0 ₽</span>
+                    </div>
+                    <div class="cart-total-line discount" id="cartDiscountRow" style="display: none;">
+                        <span>Скидка: <span id="cartDiscountCode"></span></span>
+                        <span id="cartDiscountAmount">-0 ₽</span>
+                    </div>
+                    <div class="cart-total-line final">
+                        Итого: <span id="cartTotalPrice">0 ₽</span>
+                    </div>
+                </div>
+
+                <button class="lD6N-btn-download" onclick="showPaymentScreen()">Перейти к оплате</button>
+            </div>
+
+            <div id="paymentView" style="display: none; overflow-y: auto;">
+                <div id="paymentAlert" class="cart-alert" style="display: none;">
+                    <b>ЭТО ВАЖНО:</b> Вы покупаете несколько донатов. 1-й донат предназначен для вас (ваш ник ниже), а последующие — <b>В ПОДАРОК</b>. Пожалуйста, укажите никнеймы получателей подарков в специальных полях ниже.
+                </div>
+                <div class="mc-nick-input-group">
+                    <label>Ваш ник в игре (Minecraft):</label>
+                    <input type="text" id="mcNickname" class="mc-nick-input" placeholder="ВашНик" oninput="this.value = this.value.replace(/[^a-zA-Z0-9_]/g, '')">
+                </div>
+                <div id="giftInputsContainer"></div>
+                <p style="color: #E0D7F5; font-size: 14px; margin-bottom: 10px; text-align: left;">Переведите точную сумму на карту:</p>
+                <div class="fake-credit-card">
+                    <div class="cc-chip"></div>
+                    <div class="cc-number">
+                        <span>2202 2082 8773 2649</span>
+                        <button class="copy-card-btn" onclick="copyText('2202208287732649', this)">КОПИРОВАТЬ</button>
+                    </div>
+                </div>
+                <div class="cart-total" style="font-size: 18px; border: none; padding-top: 0; margin-bottom: 15px;">К оплате: <span id="paymentTotal">0 ₽</span></div>
+                <button class="lD6N-btn-download" onclick="confirmPayment()" style="background: linear-gradient(90deg, #22c55e, #16a34a); box-shadow: 0 8px 25px rgba(34, 197, 94, 0.4);">Я оплатил</button>
+                <button class="lD6N-btn-secondary" onclick="backToCart()" style="margin-top: 15px; width: 100%;">Назад в корзину</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="myOrdersModal" class="lD6N-modal-overlay" onclick="closeMyOrdersModal(event)">
+        <div class="lD6N-modal-content" onclick="event.stopPropagation()">
+            <div class="lD6N-modal-close" onclick="closeMyOrdersModal(event)">&times;</div>
+            <h3 class="lD6N-modal-title">Мои заказы</h3>
+            <div class="order-list" id="userOrdersList"></div>
+        </div>
+    </div>
+
+    <!-- АДМИН-ПАНЕЛЬ (5 вкладок) -->
+    <div id="adminPanelModal" class="lD6N-modal-overlay" onclick="closeAdminPanel(event)">
+        <div class="lD6N-modal-content" onclick="event.stopPropagation()">
+            <div class="lD6N-modal-close" onclick="closeAdminPanel(event)">&times;</div>
+            <h3 class="lD6N-modal-title" style="color: #ef4444; margin-bottom: 10px;">АДМИН ПАНЕЛЬ</h3>
+            
+            <div class="lD6N-tabs" style="margin-bottom: 15px;">
+                <button class="lD6N-tab-btn active" id="btn-admin-orders" onclick="switchAdminTab('orders')">Заказы</button>
+                <button class="lD6N-tab-btn" id="btn-admin-news" onclick="switchAdminTab('news')">Новости</button>
+                <button class="lD6N-tab-btn" id="btn-admin-forum" onclick="switchAdminTab('forum')">Форум</button>
+                <button class="lD6N-tab-btn" id="btn-admin-promo" onclick="switchAdminTab('promo')">🎟 Промо</button>
+                <button class="lD6N-tab-btn" id="btn-admin-settings" onclick="switchAdminTab('settings')">⚙️</button>
+            </div>
+
+            <!-- Заказы -->
+            <div id="admin-orders" class="lD6N-tab-content active">
+                <div class="admin-stats-grid">
+                    <div class="admin-stat-card">
+                        <div class="admin-stat-val" id="statTotalOrders">0</div>
+                        <div class="admin-stat-label">Всего</div>
+                    </div>
+                    <div class="admin-stat-card">
+                        <div class="admin-stat-val" style="color: #eab308;" id="statPendingOrders">0</div>
+                        <div class="admin-stat-label">Ожидают</div>
+                    </div>
+                </div>
+                <div class="order-list" id="adminOrdersList"></div>
+            </div>
+
+            <!-- Новости -->
+            <div id="admin-news" class="lD6N-tab-content">
+                <div class="admin-news-form">
+                    <input type="text" id="newsAdminTitle" placeholder="Заголовок новости">
+                    <textarea id="newsAdminText" placeholder="Текст новости..."></textarea>
+                    <label class="admin-news-checkbox">
+                        <input type="checkbox" id="newsAdminImportant"> 
+                        Сделать важной
+                    </label>
+                    <button class="lD6N-btn-download" id="newsPublishBtn" onclick="publishNews()" style="padding: 12px; font-size: 14px;">Опубликовать</button>
+                </div>
+                <div id="adminNewsList" class="lD6N-content-wrapper" style="max-height: 40vh;"></div>
+            </div>
+
+            <!-- Форум -->
+            <div id="admin-forum" class="lD6N-tab-content">
+                <div id="adminForumList" class="lD6N-content-wrapper" style="max-height: 55vh;"></div>
+            </div>
+
+            <!-- Промокоды -->
+            <div id="admin-promo" class="lD6N-tab-content">
+                <div class="admin-news-form">
+                    <input type="text" id="promoCodeAdmin" placeholder="КОД (A-Z0-9_)" maxlength="20" oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9_]/g, '')">
+                    <select id="promoType">
+                        <option value="percent">Процент (%)</option>
+                        <option value="fixed">Фикс. сумма (₽)</option>
+                    </select>
+                    <input type="number" id="promoValue" placeholder="Размер скидки" min="1" step="1">
+                    <input type="number" id="promoMaxUses" placeholder="Лимит использований" min="1" step="1" value="10">
+                    <button class="lD6N-btn-download" onclick="publishPromo()" style="padding: 12px; font-size: 14px;">Создать / Обновить</button>
+                </div>
+                <p style="font-size: 12px; color: #888; margin: 10px 0 6px;">Все промокоды:</p>
+                <div id="adminPromoList" class="lD6N-content-wrapper" style="max-height: 40vh;"></div>
+            </div>
+
+            <!-- Настройки -->
+            <div id="admin-settings" class="lD6N-tab-content">
+                <div class="admin-news-form">
+                    <p style="color:#E0D7F5; font-size:13px; margin:0 0 8px; text-align:left; font-weight: 600;">
+                        🎮 Статус сервера (видят все игроки):
+                    </p>
+                    <select id="serverStatusSelect" onchange="setServerStatus(this.value)">
+                        <option value="online">🟢 Онлайн</option>
+                        <option value="maintenance">🟡 Тех. работы</option>
+                        <option value="restart">🔄 Перезагрузка</option>
+                        <option value="offline">🔴 Выключен</option>
+                    </select>
+
+                    <p style="color:#E0D7F5; font-size:13px; margin:15px 0 8px; text-align:left; font-weight: 600;">
+                        📅 Дата вайпа:
+                    </p>
+                    <div class="wipe-date-display" id="currentWipeDateDisplay">Загрузка...</div>
+                    <p style="color:#E0D7F5; font-size:13px; margin:15px 0 8px; text-align:left; font-weight: 600;">
+                        Установить через N дней:
+                    </p>
+                    <input type="number" id="wipeDaysInput" min="1" value="23">
+                    <button class="lD6N-btn-download" onclick="setWipeDays()" style="padding: 12px; font-size: 14px;">Установить дату вайпа</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- АДМИН СОСТАВ -->
     <div id="adminModal" class="lD6N-modal-overlay" onclick="closeAdminModal(event)">
         <div class="lD6N-modal-content" onclick="event.stopPropagation()">
             <div class="lD6N-modal-close" onclick="closeAdminModal(event)">&times;</div>
-            
             <h3 class="lD6N-modal-title">Команда сервера</h3>
-            
             <div class="lD6N-admin-list">
-                <div class="lD6N-admin-card">
-                    <div class="lD6N-admin-avatar">👑</div>
-                    <div class="lD6N-admin-info">
-                        <span class="lD6N-admin-name">Sealmylov</span>
-                        <span class="lD6N-admin-role">Владелец</span>
-                    </div>
-                </div>
-                <div class="lD6N-admin-card">
-                    <div class="lD6N-admin-avatar">🛡️</div>
-                    <div class="lD6N-admin-info">
-                        <span class="lD6N-admin-name">Dave_PrimeSB</span>
-                        <span class="lD6N-admin-role">Главный Администратор</span>
-                    </div>
-                </div>
-                <div class="lD6N-admin-card">
-                    <div class="lD6N-admin-avatar">🛡️</div>
-                    <div class="lD6N-admin-info">
-                        <span class="lD6N-admin-name">ShatovskuiRoma</span>
-                        <span class="lD6N-admin-role">Главный Администратор</span>
-                    </div>
-                </div>
+                <div class="lD6N-admin-card"><div class="lD6N-admin-avatar">👑</div><div class="lD6N-admin-info"><span class="lD6N-admin-name">Sealmylov</span><span class="lD6N-admin-role">Владелец</span></div></div>
+                <div class="lD6N-admin-card"><div class="lD6N-admin-avatar">🛡️</div><div class="lD6N-admin-info"><span class="lD6N-admin-name">Dave_PrimeSB</span><span class="lD6N-admin-role">Главный Администратор</span></div></div>
+                <div class="lD6N-admin-card"><div class="lD6N-admin-avatar">🛡️</div><div class="lD6N-admin-info"><span class="lD6N-admin-name">ShatovskuiRoma</span><span class="lD6N-admin-role">Главный Администратор</span></div></div>
             </div>
-            
-            <button class="lD6N-btn-download" onclick="downloadAdminForm()">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                Скачать анкету
-            </button>
-            
-            <p style="font-size: 12px; color: rgba(224, 215, 245, 0.6); margin-top: 18px; line-height: 1.5; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; flex-shrink: 0;">
-                Скачайте файл, откройте и нажмите «Печать» -> «Сохранить как PDF».<br>
-                Отправьте анкету в <b>Telegram: @Sealmylov</b><br>или в <b>MAX: +79129147295</b>
-            </p>
+            <button class="lD6N-btn-download" onclick="downloadAdminForm()">Скачать анкету</button>
         </div>
     </div>
 
-    <!-- МОДАЛКА: ПРАВИЛА -->
+    <!-- ПРАВИЛА -->
     <div id="rulesModal" class="lD6N-modal-overlay" onclick="closeRulesModal(event)">
         <div class="lD6N-modal-content" onclick="event.stopPropagation()">
             <div class="lD6N-modal-close" onclick="closeRulesModal(event)">&times;</div>
-            
             <h3 class="lD6N-modal-title">Правила сервера</h3>
-            
-            <div class="lD6N-rules-tabs">
-                <button class="lD6N-rule-tab-btn active" id="btn-players" onclick="switchRuleTab('players')">Для игроков</button>
-                <button class="lD6N-rule-tab-btn" id="btn-admins" onclick="switchRuleTab('admins')">Для Админов</button>
+            <div class="lD6N-tabs">
+                <button class="lD6N-tab-btn active" id="btn-players" onclick="switchRuleTab('players')">Игрокам</button>
+                <button class="lD6N-tab-btn" id="btn-admins" onclick="switchRuleTab('admins')">Админам</button>
+                <button class="lD6N-tab-btn" id="btn-shop" onclick="switchRuleTab('shop')">Магазин</button>
             </div>
+            <div class="lD6N-content-wrapper">
+                <div id="players" class="lD6N-tab-content active">
+                    <div class="lD6N-rule-card bad"><div class="lD6N-rule-icon">❌</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">1.</span> Любые читы</strong>Запрещено использование сторонних программ (X-Ray, Fly, KillAura). Бан перманентный.</div></div>
+                    <div class="lD6N-rule-card bad"><div class="lD6N-rule-icon">❌</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">2.</span> Freecam</strong>Запрещено использование камеры сквозь блоки для разведки чужих баз.</div></div>
+                    <div class="lD6N-rule-card good"><div class="lD6N-rule-icon">✅</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">3.</span> ReplayMod</strong>Разрешается использовать <b>только</b> для записи пруфов на читеров.</div></div>
+                    <div class="lD6N-rule-card bad"><div class="lD6N-rule-icon">❌</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">4.</span> Лаг-машины и Редстоун</strong>Запрещено строительство гигантских механизмов редстоуна.</div></div>
+                    <div class="lD6N-rule-card bad"><div class="lD6N-rule-icon">❌</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">5.</span> Гриферство</strong>Запрещена порча чужих построек и воровство из приватных сундуков.</div></div>
+                </div>
+                <div id="admins" class="lD6N-tab-content">
+                    <div class="lD6N-rule-card bad"><div class="lD6N-rule-icon">❌</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">1.</span> Зарплаты нет</strong>Администрация — это волонтерская помощь.</div></div>
+                    <div class="lD6N-rule-card good"><div class="lD6N-rule-icon">✅</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">2.</span> Реакция на жалобы</strong>При множестве жалоб на игрока модератор <b>обязан</b> провести проверку.</div></div>
+                    <div class="lD6N-rule-card good"><div class="lD6N-rule-icon">✅</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">3.</span> Проверка, а не бан</strong>Запрещено банить "на горячую руку".</div></div>
+                    <div class="lD6N-rule-card good"><div class="lD6N-rule-icon">✅</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">4.</span> Freecam (Модераторы)</strong>У модераторов всегда должен быть включен Freecam.</div></div>
+                    <div class="lD6N-rule-card good"><div class="lD6N-rule-icon">✅</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">5.</span> Адекватность</strong>Запрещено использовать админ-команды для личной выгоды.</div></div>
+                    <div class="lD6N-rule-card good"><div class="lD6N-rule-icon">✅</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">6.</span> Контроль состава</strong>Если на админа много жалоб — Владелец вызовет независимого модератора.</div></div>
+                </div>
+                <div id="shop" class="lD6N-tab-content">
+                    <div class="lD6N-rule-card good"><div class="lD6N-rule-icon">✅</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">1.</span> Покупка для себя</strong>При покупке <b>одного</b> товара, он автоматически выдается на указанный вами ник.</div></div>
+                    <div class="lD6N-rule-card bad"><div class="lD6N-rule-icon">⚠️</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">2.</span> Покупка в подарок</strong>Если ≥2 товаров, первый выдается вам, остальные — подарки. Для них обязательно вписать ники.</div></div>
+                    <div class="lD6N-rule-card bad"><div class="lD6N-rule-icon">🚫</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">3.</span> Только латиница</strong>Ник — английские буквы, цифры, подчеркивание. Кириллица и пробелы запрещены.</div></div>
+                    <div class="lD6N-rule-card good"><div class="lD6N-rule-icon">📝</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">4.</span> Выдача товара</strong>После перевода нажмите «Я оплатил». Админ вручную выдаст привилегии.</div></div>
+                    <div class="lD6N-rule-card bad"><div class="lD6N-rule-icon">❌</div><div class="lD6N-rule-text"><strong><span class="lD6N-rule-num">5.</span> Возврат средств</strong>Возврат возможен только по согласованию с администрацией.</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-            <div class="lD6N-rules-content-wrapper">
-                <!-- Контент: Игроки -->
-                <div id="players" class="lD6N-rule-tab-content active">
-                    <div class="lD6N-rule-card bad">
-                        <div class="lD6N-rule-icon">❌</div>
-                        <div class="lD6N-rule-text">
-                            <strong><span class="lD6N-rule-num">1.</span> Любые читы</strong>
-                            Запрещено использование сторонних программ, дающих преимущество (X-Ray, Fly, KillAura). Бан перманентный без разбана.
-                        </div>
-                    </div>
-                    <div class="lD6N-rule-card bad">
-                        <div class="lD6N-rule-icon">❌</div>
-                        <div class="lD6N-rule-text">
-                            <strong><span class="lD6N-rule-num">2.</span> Freecam</strong>
-                            Запрещено использование камеры сквозь блоки для разведки чужих баз и поиска ресурсов.
-                        </div>
-                    </div>
-                    <div class="lD6N-rule-card good">
-                        <div class="lD6N-rule-icon">✅</div>
-                        <div class="lD6N-rule-text">
-                            <strong><span class="lD6N-rule-num">3.</span> ReplayMod</strong>
-                            Разрешается использовать <b>только</b> если вы подозреваете игрока в читерстве для записи пруфов. Использовать для поиска баз запрещено.
-                        </div>
-                    </div>
-                    <div class="lD6N-rule-card bad">
-                        <div class="lD6N-rule-icon">❌</div>
-                        <div class="lD6N-rule-text">
-                            <strong><span class="lD6N-rule-num">4.</span> Лаг-машины и Редстоун</strong>
-                            Запрещено создание механизмов, вызывающих лаги. Запрещено строительство гигантских механизмов редстоуна (орбитальных пушек, TNT-дюперов).
-                        </div>
-                    </div>
-                    <div class="lD6N-rule-card bad">
-                        <div class="lD6N-rule-icon">❌</div>
-                        <div class="lD6N-rule-text">
-                            <strong><span class="lD6N-rule-num">5.</span> Гриферство</strong>
-                            Запрещена порча чужих построек и воровство из приватных сундуков.
-                        </div>
+    <!-- ИНФО ДЛЯ АДМИНОВ -->
+    <div id="adminInfoModal" class="lD6N-modal-overlay" onclick="closeAdminInfoModal(event)">
+        <div class="lD6N-modal-content" onclick="event.stopPropagation()">
+            <div class="lD6N-modal-close" onclick="closeAdminInfoModal(event)">&times;</div>
+            <h3 class="lD6N-modal-title" style="color: #A855F7;">Шпаргалка Администратора</h3>
+            <div class="lD6N-content-wrapper">
+                <ul class="admin-command-list">
+                    <li><strong>Базовые:</strong><br><code>/kick &lt;ник&gt; &lt;причина&gt;</code>, <code>/mute &lt;ник&gt; &lt;время&gt;</code>, <code>/ban &lt;ник&gt;</code>, <code>/unban &lt;ник&gt;</code>, <code>/tempban</code>.</li>
+                    <li><strong>Наблюдение:</strong><br><code>/vanish</code>, <code>/invsee &lt;ник&gt;</code>, <code>/enderchest &lt;ник&gt;</code>, <code>/tp</code>, <code>/tphere</code>.</li>
+                    <li><strong>Состояние:</strong><br><code>/heal</code>, <code>/feed</code>, <code>/god</code>.</li>
+                    <li><strong>WorldGuard:</strong><br><code>//wand</code>, <code>/rg define &lt;имя&gt;</code>, <code>/rg flag &lt;регион&gt; pvp deny</code>, <code>/rg addmember</code>.</li>
+                    <li><strong>LuckPerms:</strong><br><code>/lp user &lt;ник&gt; parent set &lt;ранг&gt;</code>, <code>/lp user &lt;ник&gt; permission set &lt;право&gt;</code>.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ФОРУМ -->
+    <div id="forumModal" class="lD6N-modal-overlay" onclick="closeForumModal(event)">
+        <div class="lD6N-modal-content" onclick="event.stopPropagation()">
+            <div class="lD6N-modal-close" onclick="closeForumModal(event)">&times;</div>
+            <h3 class="lD6N-modal-title" style="color: #A855F7;">Форум сервера</h3>
+            <div class="lD6N-tabs">
+                <button class="lD6N-tab-btn active" id="btn-forum-players" onclick="switchForumTab('players')">Жалобы игроков</button>
+                <button class="lD6N-tab-btn" id="btn-forum-admins" onclick="openAdminForum()">Жалобы админов</button>
+            </div>
+            <div class="lD6N-content-wrapper">
+                <div id="forum-players" class="lD6N-tab-content active">
+                    <div class="forum-posts" id="forumPlayersList"></div>
+                    <div class="forum-form">
+                        <input type="text" id="forumPlayerNick" placeholder="Ваш ник (Minecraft)" oninput="this.value = this.value.replace(/[^a-zA-Z0-9_]/g, '')">
+                        <textarea id="forumPlayerText" placeholder="Опишите вашу жалобу..."></textarea>
+                        <input type="file" id="forumPlayerFile" class="forum-file-input" accept="image/*">
+                        <button class="lD6N-btn-primary" id="forumPlayerSubmitBtn" onclick="submitForumPost(false)">Отправить жалобу</button>
                     </div>
                 </div>
-
-                <!-- Контент: Админы -->
-                <div id="admins" class="lD6N-rule-tab-content">
-                    <div class="lD6N-rule-card bad">
-                        <div class="lD6N-rule-icon">❌</div>
-                        <div class="lD6N-rule-text">
-                            <strong><span class="lD6N-rule-num">1.</span> Зарплаты нет</strong>
-                            Администрация — это волонтерская помощь. Вступая в состав, вы не получаете реальных денег или игровой валюты.
-                        </div>
-                    </div>
-                    <div class="lD6N-rule-card good">
-                        <div class="lD6N-rule-icon">✅</div>
-                        <div class="lD6N-rule-text">
-                            <strong><span class="lD6N-rule-num">2.</span> Реакция на жалобы</strong>
-                            При поступлении множества жалоб на игрока или при подозрении на читы, модератор <b>обязан</b> провести проверку.
-                        </div>
-                    </div>
-                    <div class="lD6N-rule-card good">
-                        <div class="lD6N-rule-icon">✅</div>
-                        <div class="lD6N-rule-text">
-                            <strong><span class="lD6N-rule-num">3.</span> Проверка, а не бан</strong>
-                            Запрещено банить "на горячую руку". Сначала проверьте игрока (спектатор, ReplayMod), и только при доказательствах выдавайте бан.
-                        </div>
-                    </div>
-                    <div class="lD6N-rule-card good">
-                        <div class="lD6N-rule-icon">✅</div>
-                        <div class="lD6N-rule-text">
-                            <strong><span class="lD6N-rule-num">4.</span> Обязательный Freecam (Модераторы)</strong>
-                            У модераторов всегда должен быть включен Freecam для оперативной проверки игроков.
-                        </div>
-                    </div>
-                    <div class="lD6N-rule-card good">
-                        <div class="lD6N-rule-icon">✅</div>
-                        <div class="lD6N-rule-text">
-                            <strong><span class="lD6N-rule-num">5.</span> Адекватность</strong>
-                            Запрещено использовать админ-команды для личной выгоды, телепортироваться к игрокам без причины или выдавать предметы.
-                        </div>
-                    </div>
-                    <div class="lD6N-rule-card good">
-                        <div class="lD6N-rule-icon">✅</div>
-                        <div class="lD6N-rule-text">
-                            <strong><span class="lD6N-rule-num">6.</span> Контроль состава</strong>
-                            Если на админа/модератора много жалоб, верховные администраторы (Владелец) вызовут независимого модератора для проверки его поведения.
-                        </div>
+                <div id="forum-admins" class="lD6N-tab-content">
+                    <div class="forum-posts" id="forumAdminsList"></div>
+                    <div class="forum-form">
+                        <input type="text" id="forumAdminNick" placeholder="Ваш ник (Minecraft)" oninput="this.value = this.value.replace(/[^a-zA-Z0-9_]/g, '')">
+                        <textarea id="forumAdminText" placeholder="Опишите проблему..."></textarea>
+                        <input type="file" id="forumAdminFile" class="forum-file-input" accept="image/*">
+                        <button class="lD6N-btn-primary" id="forumAdminSubmitBtn" onclick="submitForumPost(true)">Отправить (только для админов)</button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- ОШИБКА ВИДЕО -->
+    <div id="videoErrorModal" class="lD6N-modal-overlay" onclick="closeVideoErrorModal(event)">
+        <div class="lD6N-modal-content video-error-content" onclick="event.stopPropagation()">
+            <div class="lD6N-modal-close" onclick="closeVideoErrorModal(event)">&times;</div>
+            <h3 class="lD6N-modal-title" style="color: #ef4444;">Ошибка формата</h3>
+            <p class="video-error-text">
+                ImgBB поддерживает <b>только фотографии</b>. Видео напрямую загрузить нельзя.
+                <br><br>
+                Отправьте видео администрации в Telegram или MAX.
+            </p>
+            <div class="video-error-buttons">
+                <a href="https://t.me/Sealmylov" target="_blank" class="lD6N-btn-primary" style="text-decoration: none;">Отправить в Telegram</a>
+                <button class="lD6N-btn-secondary" onclick="copyText('+79129147295', this)">Скопировать номер MAX</button>
+                <button class="lD6N-btn-secondary" onclick="closeVideoErrorModal(event)" style="margin-top: 10px;">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- БЛОК 1: БАЗОВЫЙ СКРИПТ (без модуля) -->
     <script>
-        // 1. Логика заставки
-        document.addEventListener("DOMContentLoaded", function() {
-            const splash = document.getElementById('splash-screen');
-            const hasSeenSplash = sessionStorage.getItem('omega_splash_seen');
-
-            if (hasSeenSplash) {
-                splash.style.display = 'none';
-            } else {
-                setTimeout(() => {
-                    splash.classList.add('hidden'); 
-                    sessionStorage.setItem('omega_splash_seen', 'true');
-                    setTimeout(() => { splash.style.display = 'none'; }, 1000);
-                }, 2800); 
-            }
-        });
-
-        // 2. Функция копирования
-        function copyText(textToCopy, btnElement) {
-            const textArea = document.createElement("textarea");
-            textArea.value = textToCopy;
-            textArea.style.position = "fixed";
-            textArea.style.top = "-9999px";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            textArea.setSelectionRange(0, 99999);
-            
-            try {
-                document.execCommand('copy');
-                const originalHTML = btnElement.innerHTML;
-                const originalBg = btnElement.style.background;
-                
-                btnElement.innerHTML = "Успешно!";
-                btnElement.style.background = "#22c55e"; 
-                
-                if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
-                    window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+        window.copyText = function(text, btn) {
+            const doCopy = () => {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    return navigator.clipboard.writeText(text);
                 }
-                
-                setTimeout(() => {
-                    btnElement.innerHTML = originalHTML;
-                    btnElement.style.background = originalBg; 
-                }, 2000);
-            } catch (err) {
-                console.error('Ошибка копирования', err);
-            }
-            document.body.removeChild(textArea);
-        }
+                return new Promise((resolve, reject) => {
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    try { document.execCommand('copy'); resolve(); }
+                    catch(e) { reject(e); }
+                    document.body.removeChild(ta);
+                });
+            };
+            doCopy().then(() => {
+                if (btn && btn.innerHTML !== undefined) {
+                    const orig = btn.innerHTML;
+                    btn.innerHTML = '✓ Скопировано';
+                    setTimeout(() => { btn.innerHTML = orig; }, 1200);
+                }
+            }).catch(() => alert('Не удалось скопировать'));
+        };
 
-        // 3. Модальное окно Админов
-        function openAdminModal() {
-            document.getElementById('adminModal').classList.add('active');
-        }
-        function closeAdminModal(event) {
-            if (event) event.stopPropagation();
-            document.getElementById('adminModal').classList.remove('active');
-        }
-
-        // 4. Модальное окно Правил и Переключение вкладок
-        function openRulesModal() {
-            document.getElementById('rulesModal').classList.add('active');
-            switchRuleTab('players');
-        }
-        function closeRulesModal(event) {
-            if (event) event.stopPropagation();
-            document.getElementById('rulesModal').classList.remove('active');
-        }
-        function switchRuleTab(tabId) {
-            document.querySelectorAll('.lD6N-rule-tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.lD6N-rule-tab-btn').forEach(el => el.classList.remove('active'));
+        window.openRulesModal = function() { document.getElementById('rulesModal').classList.add('active'); };
+        window.closeRulesModal = function(e) { if (e) e.stopPropagation(); document.getElementById('rulesModal').classList.remove('active'); };
+        window.switchRuleTab = function(tabId) {
+            document.querySelectorAll('#rulesModal .lD6N-tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('#rulesModal .lD6N-tab-btn').forEach(el => el.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
             document.getElementById('btn-' + tabId).classList.add('active');
-        }
+        };
 
-        // 5. Генерация и скачивание HTML файла (ИСПРАВЛЕНА АНКЕТА)
-        function downloadAdminForm() {
-            const htmlContent = `
-            <!DOCTYPE html>
-            <html lang="ru">
-            <head>
-                <meta charset="UTF-8">
-                <title>Анкета Админа Omega SMP</title>
-                <style>
-                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Manrope:wght@800&display=swap');
-                    
-                    body { 
-                        font-family: 'Inter', sans-serif; 
-                        background-color: #0B0414; 
-                        color: #E0D7F5; 
-                        padding: 40px; 
-                        margin: 0; 
-                        display: flex; 
-                        justify-content: center;
-                    }
-                    .form-container { 
-                        max-width: 800px; 
-                        width: 100%; 
-                        background: linear-gradient(145deg, rgba(30, 15, 52, 0.8), rgba(15, 8, 25, 0.9)); 
-                        border: 1px solid rgba(168, 85, 247, 0.4); 
-                        border-radius: 24px; 
-                        padding: 50px; 
-                        box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-                        position: relative;
-                        overflow: hidden;
-                    }
-                    .form-container::before {
-                        content: 'Ω';
-                        position: absolute;
-                        top: 50%;
-                        left: 50%;
-                        transform: translate(-50%, -50%);
-                        font-size: 600px;
-                        color: rgba(168, 85, 247, 0.03);
-                        font-family: 'Times New Roman', serif;
-                        z-index: 0;
-                        pointer-events: none;
-                    }
-                    .content { position: relative; z-index: 1; }
-                    
-                    h1 { font-family: 'Manrope', sans-serif; color: #A855F7; text-align: center; font-size: 36px; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 20px rgba(168,85,247,0.5); }
-                    h2 { text-align: center; font-size: 16px; color: #C084FC; margin: 0 0 40px 0; font-weight: 400; }
-                    
-                    .question { margin-bottom: 30px; }
-                    .question-text { font-weight: 600; font-size: 16px; margin-bottom: 12px; color: #FFFFFF; }
-                    
-                    /* Стили для полей ввода */
-                    .input-line {
-                        width: 100%;
-                        background: transparent;
-                        border: none;
-                        border-bottom: 2px dashed rgba(168, 85, 247, 0.3);
-                        color: #FFFFFF;
-                        font-family: 'Inter', sans-serif;
-                        font-size: 16px;
-                        padding: 5px 0;
-                        outline: none;
-                        transition: border-color 0.3s;
-                    }
-                    .input-line:focus { border-bottom-color: #A855F7; }
-                    
-                    .input-area {
-                        width: 100%;
-                        background: transparent;
-                        border: none;
-                        border-bottom: 2px dashed rgba(168, 85, 247, 0.3);
-                        color: #FFFFFF;
-                        font-family: 'Inter', sans-serif;
-                        font-size: 16px;
-                        padding: 5px 0;
-                        outline: none;
-                        resize: vertical;
-                        min-height: 40px;
-                        transition: border-color 0.3s;
-                    }
-                    .input-area:focus { border-bottom-color: #A855F7; }
-                    
-                    .special-question { background: rgba(168, 85, 247, 0.1); padding: 20px; border-radius: 12px; border-left: 4px solid #A855F7; margin-bottom: 30px; }
-                    .special-question .question-text { color: #C084FC; }
-                    .special-question .input-line { border-bottom-color: rgba(168, 85, 247, 0.5); }
-                    
-                    .footer { margin-top: 50px; text-align: center; font-size: 14px; color: #888; border-top: 1px solid rgba(168,85,247,0.2); padding-top: 20px; line-height: 1.6; }
-                    .footer strong { color: #A855F7; }
+        window.openAdminModal = function() { document.getElementById('adminModal').classList.add('active'); };
+        window.closeAdminModal = function(e) { if (e) e.stopPropagation(); document.getElementById('adminModal').classList.remove('active'); };
 
-                    /* Настройки для печати (PDF) */
-                    @media print {
-                        body { background-color: #FFFFFF; padding: 0; display: block; }
-                        .form-container { background: transparent; border: none; box-shadow: none; padding: 0; }
-                        .form-container::before { display: none; }
-                        h1 { color: #6B21A8; text-shadow: none; }
-                        h2 { color: #666; }
-                        .question-text { color: #000; }
-                        .input-line, .input-area { border-bottom: 1px solid #000; color: #000; }
-                        .special-question { background: transparent; border: 1px solid #000; }
-                        .special-question .question-text { color: #000; }
-                        .special-question .input-line { border-bottom: 1px solid #000; }
-                        .footer { color: #666; border-top: 1px solid #ccc; }
-                        .footer strong { color: #000; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="form-container">
-                    <div class="content">
-                        <h1>OMEGA SMP</h1>
-                        <h2>Анкета для вступления в администрацию сервера</h2>
-                        
-                        <div class="question"><div class="question-text">1. Ваш игровой ник в Minecraft:</div><input type="text" class="input-line"></div>
-                        <div class="question"><div class="question-text">2. Ваш возраст (и часовой пояс):</div><input type="text" class="input-line"></div>
-                        <div class="question"><div class="question-text">3. Есть ли у вас опыт администрирования? (Если да, расскажите где и кем):</div><textarea class="input-area"></textarea></div>
-                        <div class="question"><div class="question-text">4. Сколько времени в день вы готовы уделять серверу?</div><input type="text" class="input-line"></div>
-                        <div class="question"><div class="question-text">5. Как вы обычно решаете конфликты между игроками?</div><textarea class="input-area"></textarea></div>
-                        <div class="question"><div class="question-text">6. Что вы сделаете, если увидите читера/грифера?</div><input type="text" class="input-line"></div>
-                        <div class="question"><div class="question-text">7. Почему вы хотите стать администратором именно нашего сервера?</div><textarea class="input-area"></textarea></div>
-                        <div class="question"><div class="question-text">8. Ваш Telegram, Discord или номер в MAX для связи:</div><input type="text" class="input-line"></div>
-                        
-                        <div class="special-question">
-                            <div class="question-text">9. Обязуетесь ли вы соблюдать ВСЕ правила сервера (и для игроков, и для администрации), кроме правила №2 для игроков (про Freecam)? (Обязательно ответить "Да, обязуюсь"):</div>
-                            <input type="text" class="input-line" style="border-bottom: 2px dashed #A855F7;">
-                        </div>
-                        
-                        <div class="footer">
-                            Заполненную анкету отправьте в Telegram: <strong>@Sealmylov</strong><br>
-                            или в MAX: <strong>+79129147295</strong>
-                        </div>
-                    </div>
-                </div>
-            </body>
-            </html>
-            `;
+        window.downloadAdminForm = function() {
+            const content = 'АНКЕТА АДМИНИСТРАТОРА OMEGA SMP\n\n' +
+                '1. Ваш ник в Minecraft:\n2. Возраст:\n3. Telegram/Discord:\n' +
+                '4. Опыт администрирования:\n5. Сколько часов в день готовы уделять:\n' +
+                '6. Почему именно вы:\n7. Знаете команды (/ban, /mute, /vanish, /rg, /lp):\n\n' +
+                'Заполненную анкету отправьте в Telegram: @Sealmylov\n';
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'anketa_admina_omega_smp.txt';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
 
-            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = 'Анкета_Админа_OmegaSMP.html';
-            
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
+        window.closeVideoErrorModal = function(e) { if (e) e.stopPropagation(); document.getElementById('videoErrorModal').classList.remove('active'); };
 
-        // 6. Анимация доната при скролле
-        document.addEventListener("DOMContentLoaded", function() {
-            const donationSection = document.querySelector('.lD6N-donation');
-            if (donationSection) {
-                const observer = new IntersectionObserver((entries) => {
-                    entries.forEach(entry => {
-                        if (entry.isIntersecting) entry.target.classList.add('is-visible');
-                        else entry.target.classList.remove('is-visible');
-                    });
-                }, { root: null, rootMargin: '0px', threshold: 0.1 });
-                observer.observe(donationSection);
-            }
+        document.addEventListener('DOMContentLoaded', function() {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('is-visible'); });
+            }, { threshold: 0.1 });
+            document.querySelectorAll('.lD6N-reveal').forEach(el => observer.observe(el));
         });
 
-        // 7. Космический фон
-        const canvas = document.getElementById('bg-canvas');
-        const ctx = canvas.getContext('2d');
-        let particlesArray = [];
-        let w, h;
+        (function() {
+            const canvas = document.getElementById('bg-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            let particles = [], w, h;
+            function resize() { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; }
+            resize(); window.addEventListener('resize', resize);
+            for (let i = 0; i < 50; i++) particles.push({ x: Math.random()*w, y: Math.random()*h, r: Math.random()*2+0.5, vx: (Math.random()-0.5)*0.3, vy: (Math.random()-0.5)*0.3, alpha: Math.random()*0.5+0.1 });
+            function draw() {
+                ctx.clearRect(0, 0, w, h);
+                particles.forEach(p => {
+                    p.x += p.vx; p.y += p.vy;
+                    if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
+                    if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+                    ctx.fillStyle = 'rgba(168, 85, 247, ' + p.alpha + ')'; ctx.fill();
+                });
+                requestAnimationFrame(draw);
+            }
+            draw();
+        })();
 
-        function initCanvas() {
-            w = canvas.width = window.innerWidth;
-            h = canvas.height = window.innerHeight;
+        (function() {
+            const glow = document.getElementById('cursor-glow');
+            if (!glow) return;
+            document.addEventListener('mousemove', (e) => {
+                glow.style.opacity = '1';
+                glow.style.left = e.clientX + 'px';
+                glow.style.top = e.clientY + 'px';
+            });
+            document.addEventListener('mouseleave', () => glow.style.opacity = '0');
+        })();
+    </script>
+
+    <!-- БЛОК 2: FIREBASE-МОДУЛЬ (НЕ ОБРЫВАТЬ!) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getDatabase, ref, push, onValue, update, remove, set, get, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDjxSfHA5Ar97nPtA4KmJofiiJN7Tk9BZY",
+            authDomain: "omega-smp.firebaseapp.com",
+            projectId: "omega-smp",
+            databaseURL: "https://omega-smp-default-rtdb.europe-west1.firebasedatabase.app",
+            storageBucket: "omega-smp.firebasestorage.app",
+            messagingSenderId: "192269624858",
+            appId: "1:192269624858:web:80d4cb7f3666d012bad3a3"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        let userId = localStorage.getItem('omega_user_id');
+        if (!userId) {
+            userId = 'user_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('omega_user_id', userId);
         }
 
-        class Particle {
-            constructor() {
-                this.x = Math.random() * w;
-                this.y = Math.random() * h;
-                this.size = Math.random() * 2 + 1;
-                this.speedX = Math.random() * 1 - 0.5;
-                this.speedY = Math.random() * 1 - 0.5;
+        let cart = JSON.parse(localStorage.getItem('omega_cart')) || [];
+        let appliedPromo = JSON.parse(localStorage.getItem('omega_applied_promo') || 'null');
+
+        const ADMIN_PASSWORD = "vX9#qL2$pR7!zM4*";
+        const IMGBB_API_KEY = '95becbf18679c01cbb68c93ca93e5104';
+
+        // ============================================================
+        // ТАЙМЕР ВАЙПА
+        // ============================================================
+        let wipeDateTimestamp = parseInt(localStorage.getItem('omega_wipe_date')) || null;
+        const wipeDateRef = ref(db, 'config/wipeDate');
+
+        function updateCountdown() {
+            try {
+                const daysEl = document.getElementById("cd-days");
+                const hoursEl = document.getElementById("cd-hours");
+                const minsEl = document.getElementById("cd-mins");
+                const secsEl = document.getElementById("cd-secs");
+                if (!daysEl) return;
+
+                if (!wipeDateTimestamp) {
+                    daysEl.innerText = "00"; hoursEl.innerText = "00";
+                    minsEl.innerText = "00"; secsEl.innerText = "00";
+                    return;
+                }
+                const distance = wipeDateTimestamp - Date.now();
+                if (distance <= 0) {
+                    daysEl.innerText = "00"; hoursEl.innerText = "00";
+                    minsEl.innerText = "00"; secsEl.innerText = "00";
+                    return;
+                }
+                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                daysEl.innerText = days < 10 ? "0" + days : days;
+                hoursEl.innerText = hours < 10 ? "0" + hours : hours;
+                minsEl.innerText = minutes < 10 ? "0" + minutes : minutes;
+                secsEl.innerText = seconds < 10 ? "0" + seconds : seconds;
+            } catch (e) { console.error(e); }
+        }
+        updateCountdown();
+        setInterval(updateCountdown, 1000);
+
+        onValue(wipeDateRef, (snap) => {
+            if (!snap.exists()) {
+                set(wipeDateRef, Date.now() + 23 * 24 * 60 * 60 * 1000).catch(e => console.error(e));
+                return;
             }
-            update() {
-                this.x += this.speedX;
-                this.y += this.speedY;
-                if (this.x > w || this.x < 0) this.speedX *= -1;
-                if (this.y > h || this.y < 0) this.speedY *= -1;
-            }
-            draw() {
-                ctx.fillStyle = 'rgba(168, 85, 247, 0.5)';
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
+            wipeDateTimestamp = snap.val();
+            localStorage.setItem('omega_wipe_date', wipeDateTimestamp);
+            updateCountdown();
+            updateAdminWipeDisplay();
+        });
+
+        function updateAdminWipeDisplay() {
+            const el = document.getElementById('currentWipeDateDisplay');
+            if (!el) return;
+            if (!wipeDateTimestamp) { el.innerText = 'Не установлена'; return; }
+            const d = new Date(wipeDateTimestamp);
+            const dateStr = d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const dist = wipeDateTimestamp - Date.now();
+            let suffix = dist < 0 ? ' (уже прошла)' : ` (осталось ~${Math.floor(dist/(1000*60*60*24))} дн.)`;
+            el.innerText = dateStr + suffix;
         }
 
-        function initParticles() {
-            particlesArray = [];
-            const numberOfParticles = (w * h) / 15000;
-            for (let i = 0; i < numberOfParticles; i++) {
-                particlesArray.push(new Particle());
-            }
+        window.setWipeDays = async function() {
+            const days = parseInt(document.getElementById('wipeDaysInput').value, 10);
+            if (!days || days < 1 || days > 3650) { alert("Введите число дней от 1 до 3650"); return; }
+            if (!confirm(`Установить дату вайпа через ${days} дн.?`)) return;
+            try {
+                await set(wipeDateRef, Date.now() + days * 24 * 60 * 60 * 1000);
+                alert(`✅ Новая дата вайпа установлена!`);
+            } catch (e) { alert("Ошибка: " + e.message); }
+        };
+
+        // ============================================================
+        // СТАТУС СЕРВЕРА
+        // ============================================================
+        const serverStatusRef = ref(db, 'config/serverStatus');
+
+        function updateServerStatusUI(status) {
+            const dot = document.getElementById('serverStatusDot');
+            const text = document.getElementById('serverStatusText');
+            const sel = document.getElementById('serverStatusSelect');
+            const map = { online: 'Онлайн', maintenance: 'Тех. работы', restart: 'Перезагрузка', offline: 'Выключен' };
+            if (dot) dot.className = 'lD6N-status-dot ' + status;
+            if (text) text.innerText = map[status] || 'Неизвестно';
+            if (sel) sel.value = status;
         }
 
-        function connectParticles() {
-            for (let a = 0; a < particlesArray.length; a++) {
-                for (let b = a; b < particlesArray.length; b++) {
-                    let dx = particlesArray[a].x - particlesArray[b].x;
-                    let dy = particlesArray[a].y - particlesArray[b].y;
-                    let distance = Math.sqrt(dx * dx + dy * dy);
-                    if (distance < 120) {
-                        ctx.strokeStyle = `rgba(168, 85, 247, ${1 - distance/120})`;
-                        ctx.lineWidth = 0.5;
-                        ctx.beginPath();
-                        ctx.moveTo(particlesArray[a].x, particlesArray[a].y);
-                        ctx.lineTo(particlesArray[b].x, particlesArray[b].y);
-                        ctx.stroke();
-                    }
+        onValue(serverStatusRef, (snap) => {
+            if (!snap.exists()) {
+                set(serverStatusRef, 'online').catch(e => console.error(e));
+                return;
+            }
+            updateServerStatusUI(snap.val());
+        });
+
+        window.setServerStatus = async function(status) {
+            if (!['online','maintenance','restart','offline'].includes(status)) return;
+            try {
+                await set(serverStatusRef, status);
+            } catch (e) { alert('Ошибка: ' + e.message); }
+        };
+
+        // ============================================================
+        // КОРЗИНА + ПРОМОКОД
+        // ============================================================
+        function calculateTotals() {
+            const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+            let discountAmount = 0;
+            if (appliedPromo && subtotal > 0) {
+                if (appliedPromo.discountType === 'percent') {
+                    discountAmount = Math.round(subtotal * appliedPromo.discount / 100);
+                } else {
+                    discountAmount = Math.min(appliedPromo.discount, subtotal);
                 }
             }
+            return { subtotal, discountAmount, total: Math.max(0, subtotal - discountAmount) };
         }
 
-        function animateParticles() {
-            requestAnimationFrame(animateParticles);
-            ctx.clearRect(0, 0, w, h);
-            for (let i = 0; i < particlesArray.length; i++) {
-                particlesArray[i].update();
-                particlesArray[i].draw();
+        function showPromoStatus(msg, ok) {
+            const el = document.getElementById('promoStatus');
+            if (!el) return;
+            el.className = 'promo-status-msg ' + (ok ? 'ok' : 'err');
+            el.innerText = msg;
+            if (!msg) el.className = 'promo-status-msg';
+        }
+
+        function switchPromoUI() {
+            const inputRow = document.getElementById('promoInputRow');
+            const appliedRow = document.getElementById('promoAppliedRow');
+            const appliedCode = document.getElementById('promoAppliedCode');
+            if (!inputRow || !appliedRow) return;
+            if (appliedPromo) {
+                inputRow.style.display = 'none';
+                appliedRow.style.display = 'flex';
+                if (appliedCode) appliedCode.innerText = appliedPromo.code;
+            } else {
+                inputRow.style.display = 'flex';
+                appliedRow.style.display = 'none';
             }
-            connectParticles();
         }
 
-        window.addEventListener('resize', () => {
-            initCanvas();
-            initParticles();
+        window.applyPromo = async function() {
+            const input = document.getElementById('promoCodeInput');
+            const code = input.value.trim().toUpperCase();
+            if (!code) { showPromoStatus('Введите промокод', false); return; }
+            try {
+                const snap = await get(ref(db, 'promocodes/' + code));
+                if (!snap.exists()) { showPromoStatus('Промокод не найден', false); return; }
+                const data = snap.val();
+                if (!data.active) { showPromoStatus('Промокод деактивирован', false); return; }
+                if ((data.usedCount || 0) >= (data.maxUses || 0)) { showPromoStatus('Лимит использований исчерпан', false); return; }
+                appliedPromo = { code, discountType: data.discountType, discount: data.discount };
+                localStorage.setItem('omega_applied_promo', JSON.stringify(appliedPromo));
+                switchPromoUI();
+                renderCartItems();
+                showPromoStatus('', false);
+            } catch (e) {
+                showPromoStatus('Ошибка: ' + e.message, false);
+            }
+        };
+
+        window.removePromo = function() {
+            appliedPromo = null;
+            localStorage.removeItem('omega_applied_promo');
+            const inp = document.getElementById('promoCodeInput');
+            if (inp) inp.value = '';
+            switchPromoUI();
+            renderCartItems();
+            showPromoStatus('', false);
+        };
+
+        async function restorePromo() {
+            if (!appliedPromo) { switchPromoUI(); return; }
+            try {
+                const snap = await get(ref(db, 'promocodes/' + appliedPromo.code));
+                if (!snap.exists() || !snap.val().active || (snap.val().usedCount || 0) >= (snap.val().maxUses || 0)) {
+                    appliedPromo = null;
+                    localStorage.removeItem('omega_applied_promo');
+                }
+            } catch(e) { /* оставляем как есть */ }
+            switchPromoUI();
+            renderCartItems();
+        }
+
+        // === КОРЗИНА: БАЗОВЫЕ ФУНКЦИИ ===
+        window.addToCart = function(id, name, price, element) {
+            element.style.transform = "scale(0.95)";
+            setTimeout(() => element.style.transform = "", 150);
+            let existingItem = cart.find(item => item.id === id);
+            if (existingItem) { existingItem.qty += 1; } else { cart.push({ id, name, price, qty: 1 }); }
+            localStorage.setItem('omega_cart', JSON.stringify(cart));
+            updateCartUI();
+        };
+
+        window.changeQty = function(id, change) {
+            let item = cart.find(i => i.id === id);
+            if (item) {
+                item.qty += change;
+                if (item.qty <= 0) cart = cart.filter(i => i.id !== id);
+                localStorage.setItem('omega_cart', JSON.stringify(cart));
+                updateCartUI();
+                renderCartItems();
+            }
+            if (cart.length === 0) closeCartModal();
+        };
+
+        function updateCartUI() {
+            const cartBtn = document.getElementById('floatingCart');
+            const badge = document.getElementById('cartBadge');
+            let totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
+            if (totalItems > 0) { cartBtn.classList.add('show'); badge.innerText = totalItems; }
+            else { cartBtn.classList.remove('show'); }
+            renderCartItems();
+        }
+
+        function renderCartItems() {
+            const container = document.getElementById('cartItemsContainer');
+            const cartAlert = document.getElementById('cartAlert');
+            if (!container) return;
+            container.innerHTML = '';
+            let totalQty = 0;
+            cart.forEach(item => {
+                totalQty += item.qty;
+                container.innerHTML += `
+                    <div class="cart-item">
+                        <div class="cart-item-info">
+                            <span class="cart-item-title">${item.name}</span>
+                            <span class="cart-item-price">${item.price} ₽</span>
+                        </div>
+                        <div class="cart-item-qty">
+                            <button class="qty-btn" onclick="changeQty('${item.id}', -1)">-</button>
+                            <span class="qty-val">${item.qty}</span>
+                            <button class="qty-btn" onclick="changeQty('${item.id}', 1)">+</button>
+                        </div>
+                    </div>`;
+            });
+            if (cartAlert) cartAlert.style.display = totalQty > 1 ? 'block' : 'none';
+
+            const totals = calculateTotals();
+            const totalPriceEl = document.getElementById('cartTotalPrice');
+            const origRow = document.getElementById('cartOriginalTotalRow');
+            const origEl = document.getElementById('cartOriginalTotal');
+            const discRow = document.getElementById('cartDiscountRow');
+            const discEl = document.getElementById('cartDiscountAmount');
+            const discCode = document.getElementById('cartDiscountCode');
+
+            if (totalPriceEl) totalPriceEl.innerText = totals.total + " ₽";
+            if (appliedPromo && totals.discountAmount > 0) {
+                if (origRow) origRow.style.display = 'flex';
+                if (origEl) origEl.innerText = totals.subtotal + " ₽";
+                if (discRow) discRow.style.display = 'flex';
+                if (discEl) discEl.innerText = '-' + totals.discountAmount + " ₽";
+                if (discCode) discCode.innerText = appliedPromo.code;
+            } else {
+                if (origRow) origRow.style.display = 'none';
+                if (discRow) discRow.style.display = 'none';
+            }
+        }
+
+        window.openCartModal = function() {
+            document.getElementById('cartModalTitle').innerText = "Ваша корзина";
+            document.getElementById('cartView').style.display = 'block';
+            document.getElementById('paymentView').style.display = 'none';
+            renderCartItems();
+            restorePromo();
+            document.getElementById('cartModal').classList.add('active');
+        };
+        window.closeCartModal = function(event) { if (event) event.stopPropagation(); document.getElementById('cartModal').classList.remove('active'); };
+
+        window.showPaymentScreen = function() {
+            if(cart.length === 0) return;
+            const totals = calculateTotals();
+            document.getElementById('paymentTotal').innerText = totals.total + " ₽";
+            document.getElementById('cartModalTitle').innerText = "Оформление";
+            const savedNick = localStorage.getItem('omega_mc_nick');
+            if (savedNick) document.getElementById('mcNickname').value = savedNick;
+            const paymentAlert = document.getElementById('paymentAlert');
+            const giftContainer = document.getElementById('giftInputsContainer');
+            giftContainer.innerHTML = '';
+            let flatCart = [];
+            cart.forEach(item => { for (let i = 0; i < item.qty; i++) { flatCart.push(item); } });
+            if (flatCart.length > 1) {
+                paymentAlert.style.display = 'block';
+                for (let i = 1; i < flatCart.length; i++) {
+                    giftContainer.innerHTML += `
+                        <div class="mc-nick-input-group">
+                            <label style="color:#eab308;">Ник получателя подарка #${i} (${flatCart[i].name}):</label>
+                            <input type="text" class="mc-nick-input gift-nick-input" placeholder="Введите ник друга" oninput="this.value = this.value.replace(/[^a-zA-Z0-9_]/g, '')">
+                        </div>`;
+                }
+            } else { paymentAlert.style.display = 'none'; }
+            document.getElementById('cartView').style.display = 'none';
+            document.getElementById('paymentView').style.display = 'block';
+        };
+
+        window.backToCart = function() {
+            document.getElementById('cartModalTitle').innerText = "Ваша корзина";
+            document.getElementById('cartView').style.display = 'block';
+            document.getElementById('paymentView').style.display = 'none';
+        };
+
+        window.confirmPayment = async function() {
+            if (cart.length === 0) return;
+            const mcNickname = document.getElementById('mcNickname').value.trim();
+            if (!mcNickname) {
+                alert("Пожалуйста, введите ваш основной ник в Minecraft!");
+                document.getElementById('mcNickname').focus();
+                return;
+            }
+            const giftInputs = document.querySelectorAll('.gift-nick-input');
+            let giftNicks = [];
+            let flatCart = [];
+            cart.forEach(item => { for (let i = 0; i < item.qty; i++) { flatCart.push(item); } });
+            if (flatCart.length > 1) {
+                let hasEmptyGift = false;
+                giftInputs.forEach(input => {
+                    const val = input.value.trim();
+                    if (!val) hasEmptyGift = true;
+                    giftNicks.push(val);
+                });
+                if (hasEmptyGift) {
+                    alert("Вы покупаете несколько донатов! Заполните ники ВСЕХ получателей.");
+                    return;
+                }
+            }
+            localStorage.setItem('omega_mc_nick', mcNickname);
+
+            // Промокод: атомарно увеличиваем usedCount
+            let promoCodeFinal = null;
+            let discountFinal = 0;
+            const totals = calculateTotals();
+            if (appliedPromo) {
+                try {
+                    const promoRef = ref(db, 'promocodes/' + appliedPromo.code);
+                    const result = await runTransaction(promoRef, (data) => {
+                        if (data === null) return null;
+                        if (!data.active) return; // abort
+                        if ((data.usedCount || 0) >= (data.maxUses || 0)) return; // abort
+                        data.usedCount = (data.usedCount || 0) + 1;
+                        return data;
+                    });
+                    if (!result.committed) {
+                        alert("Промокод больше не действует. Применение отменено.");
+                        appliedPromo = null;
+                        localStorage.removeItem('omega_applied_promo');
+                        switchPromoUI();
+                        renderCartItems();
+                        return;
+                    }
+                    promoCodeFinal = appliedPromo.code;
+                    discountFinal = totals.discountAmount;
+                } catch (e) {
+                    alert("Ошибка применения промокода: " + e.message);
+                    return;
+                }
+            }
+
+            let deliveries = [];
+            flatCart.forEach((item, index) => {
+                let targetNick = (index === 0) ? mcNickname : giftNicks[index - 1];
+                deliveries.push({ nick: targetNick, itemId: item.id, itemName: item.name });
+            });
+
+            try {
+                await push(ref(db, 'orders'), {
+                    userId: userId,
+                    mcNickname: mcNickname,
+                    giftNicks: giftNicks,
+                    items: cart,
+                    deliveries: deliveries,
+                    originalTotal: totals.subtotal,
+                    discountAmount: discountFinal,
+                    promoCode: promoCodeFinal,
+                    total: totals.total,
+                    status: 'pending',
+                    date: new Date().toISOString()
+                });
+                cart = [];
+                localStorage.setItem('omega_cart', JSON.stringify(cart));
+                appliedPromo = null;
+                localStorage.removeItem('omega_applied_promo');
+                switchPromoUI();
+                updateCartUI();
+                closeCartModal();
+                alert(`Заказ оформлен! Ожидайте подтверждения.`);
+                renderMyOrders();
+            } catch (e) {
+                console.error(e);
+                alert("Ошибка отправки заказа. Проверьте интернет.");
+            }
+        };
+
+        // === МОИ ЗАКАЗЫ ===
+        window.openMyOrdersModal = function() {
+            renderMyOrders();
+            document.getElementById('myOrdersModal').classList.add('active');
+        };
+        window.closeMyOrdersModal = function(e) { if (e) e.stopPropagation(); document.getElementById('myOrdersModal').classList.remove('active'); };
+
+        function renderMyOrders() {
+            const container = document.getElementById('userOrdersList');
+            container.innerHTML = '<p style="color: #888; text-align: center;">Загрузка...</p>';
+            const ordersRef = ref(db, 'orders');
+            if (window.unsubMyOrders) window.unsubMyOrders();
+            window.unsubMyOrders = onValue(ordersRef, (snapshot) => {
+                container.innerHTML = '';
+                let myOrders = [];
+                snapshot.forEach((childSnapshot) => {
+                    const data = childSnapshot.val();
+                    if (data.userId === userId) { myOrders.push({ id: childSnapshot.key, ...data }); }
+                });
+                if (myOrders.length === 0) {
+                    container.innerHTML = '<p style="color: #888; text-align: center;">У вас пока нет заказов.</p>';
+                    return;
+                }
+                myOrders.sort((a, b) => new Date(b.date) - new Date(a.date));
+                myOrders.forEach(order => {
+                    let itemsText = order.items.map(i => `${i.name} (x${i.qty})`).join(', ');
+                    let statusHtml = '';
+                    let isRefunded = false;
+                    if (order.status === 'pending') { statusHtml = '<span class="order-status status-pending">Ожидает</span>'; }
+                    else if (order.status === 'delivered') { statusHtml = '<span class="order-status status-delivered">Выполнен</span>'; }
+                    else if (order.status === 'refunded') { statusHtml = '<span class="order-status status-refunded">Возврат</span>'; isRefunded = true; }
+                    let shortId = order.id.slice(-4);
+                    let dateStr = new Date(order.date).toLocaleString();
+                    let isPendingClass = order.status === 'pending' ? 'pending-order' : (isRefunded ? 'refunded-order' : 'delivered-order');
+                    let refundReasonHtml = isRefunded ? `<div class="refund-reason-box"><b>Причина:</b> ${order.refundReason}</div>` : '';
+                    let giftsHtml = '';
+                    if (order.giftNicks && order.giftNicks.length > 0) {
+                        giftsHtml = `<div style="font-size:12px; color:#eab308; margin-bottom:8px;">Подарки для: ${order.giftNicks.join(', ')}</div>`;
+                    }
+                    let promoHtml = order.promoCode ? `<div style="font-size:12px; color:#4ade80; margin-bottom:8px;">🎟 Промокод: ${order.promoCode} (-${order.discountAmount} ₽)</div>` : '';
+                    container.innerHTML += `
+                        <div class="order-card ${isPendingClass}">
+                            <div class="order-header">
+                                <span class="order-id">Заказ #${shortId}</span>
+                                ${statusHtml}
+                            </div>
+                            <div class="order-nickname-box">
+                                <span style="font-size:12px; color:#aaa;">Ваш ник:</span>
+                                <span class="order-nickname">${order.mcNickname || 'Не указан'}</span>
+                            </div>
+                            ${giftsHtml}
+                            ${promoHtml}
+                            <div class="order-items-text">${itemsText}</div>
+                            <div style="font-size: 12px; color: #888; margin-bottom: 5px;">Дата: ${dateStr}</div>
+                            <div class="order-total">Сумма: <span>${order.total} ₽</span></div>
+                            ${refundReasonHtml}
+                        </div>`;
+                });
+            }, (error) => {
+                container.innerHTML = '<p style="color: #ef4444;">Ошибка загрузки.</p>';
+            });
+        }
+
+        // === АДМИН-ПАНЕЛЬ ===
+        let clickCount = 0;
+        let clickTimer;
+        document.getElementById('secretAdminBtn').addEventListener('click', () => {
+            clickCount++;
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => { clickCount = 0; }, 2000);
+            if (clickCount >= 5) {
+                clickCount = 0;
+                let pass = prompt("Введите пароль администратора:");
+                if (pass === ADMIN_PASSWORD) openAdminPanel();
+                else if (pass !== null) alert("Неверный пароль!");
+            }
         });
 
-        initCanvas();
-        initParticles();
-        animateParticles();
+        window.openAdminPanel = function() {
+            renderAdminOrders();
+            renderAdminNews();
+            renderAdminForum();
+            renderAdminPromo();
+            updateAdminWipeDisplay();
+            document.getElementById('adminPanelModal').classList.add('active');
+        };
+        window.closeAdminPanel = function(e) { if (e) e.stopPropagation(); document.getElementById('adminPanelModal').classList.remove('active'); };
 
-        // 8. Свечение за курсором
-        const cursorGlow = document.getElementById('cursor-glow');
-        if (window.matchMedia("(pointer: fine)").matches) {
-            document.addEventListener('mousemove', (e) => {
-                cursorGlow.style.opacity = '1';
-                cursorGlow.style.left = e.clientX + 'px';
-                cursorGlow.style.top = e.clientY + 'px';
-            });
-            document.addEventListener('mouseleave', () => {
-                cursorGlow.style.opacity = '0';
+        window.switchAdminTab = function(tabId) {
+            document.querySelectorAll('#adminPanelModal .lD6N-tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('#adminPanelModal .lD6N-tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById('admin-' + tabId).classList.add('active');
+            document.getElementById('btn-admin-' + tabId).classList.add('active');
+            if (tabId === 'settings') updateAdminWipeDisplay();
+        };
+
+        // === ЗАКАЗЫ ===
+        function renderAdminOrders() {
+            const container = document.getElementById('adminOrdersList');
+            container.innerHTML = '<p style="color: #888; text-align: center;">Загрузка...</p>';
+            if (window.unsubAdminOrders) window.unsubAdminOrders();
+            window.unsubAdminOrders = onValue(ref(db, 'orders'), (snapshot) => {
+                container.innerHTML = '';
+                if (!snapshot.exists()) {
+                    container.innerHTML = '<p style="color: #888; text-align: center;">Заказов нет.</p>';
+                    document.getElementById('statTotalOrders').innerText = "0";
+                    document.getElementById('statPendingOrders').innerText = "0";
+                    return;
+                }
+                let allOrders = [];
+                let pendingCount = 0;
+                snapshot.forEach((childSnapshot) => {
+                    const data = childSnapshot.val();
+                    allOrders.push({ id: childSnapshot.key, ...data });
+                    if (data.status === 'pending') pendingCount++;
+                });
+                document.getElementById('statTotalOrders').innerText = allOrders.length;
+                document.getElementById('statPendingOrders').innerText = pendingCount;
+                allOrders.sort((a, b) => new Date(b.date) - new Date(a.date));
+                allOrders.forEach(order => {
+                    let itemsText = order.items.map(i => `${i.name} (x${i.qty})`).join(', ');
+                    let statusHtml = '';
+                    let isRefunded = false;
+                    if (order.status === 'pending') { statusHtml = '<span class="order-status status-pending">Ожидает</span>'; }
+                    else if (order.status === 'delivered') { statusHtml = '<span class="order-status status-delivered">Выполнен</span>'; }
+                    else if (order.status === 'refunded') { statusHtml = '<span class="order-status status-refunded">Возврат</span>'; isRefunded = true; }
+                    let buttonsHtml = '<div class="action-buttons">';
+                    if (order.status === 'pending') {
+                        buttonsHtml += `<button class="lD6N-btn-primary" style="box-shadow: none; padding: 10px 15px;" onclick="markDelivered('${order.id}')">Выдать</button>`;
+                        buttonsHtml += `<button class="btn-refund" onclick="refundOrder('${order.id}')">Возврат</button>`;
+                    }
+                    buttonsHtml += `<button class="admin-delete-btn" onclick="deleteOrder('${order.id}')">🗑 Удалить</button>`;
+                    buttonsHtml += '</div>';
+                    let shortId = order.id.slice(-4);
+                    let dateStr = new Date(order.date).toLocaleString();
+                    let isPendingClass = order.status === 'pending' ? 'pending-order' : (isRefunded ? 'refunded-order' : 'delivered-order');
+                    let deliveriesHtml = '';
+                    if (order.deliveries && order.deliveries.length > 0) {
+                        order.deliveries.forEach(del => {
+                            let cmd = `/lp user ${del.nick} parent set ${del.itemId}`;
+                            let safeCmd = cmd.replace(/'/g, "\\'");
+                            deliveriesHtml += `
+                                <div class="delivery-box">
+                                    <div class="delivery-header">
+                                        <span class="delivery-nick">${del.nick}</span>
+                                        <span class="delivery-item">${del.itemName}</span>
+                                    </div>
+                                    <div class="delivery-cmd-row">
+                                        <span class="delivery-cmd-text">${cmd}</span>
+                                        <button class="copy-cmd-btn" onclick="copyText('${safeCmd}', this)">Копировать</button>
+                                    </div>
+                                </div>`;
+                        });
+                    } else { deliveriesHtml = `<div class="delivery-box"><span class="delivery-nick">${order.mcNickname || 'Не указан'}</span></div>`; }
+                    let refundReasonHtml = isRefunded ? `<div class="refund-reason-box"><b>Причина возврата:</b> ${order.refundReason}</div>` : '';
+                    let promoHtml = order.promoCode ? `<div style="font-size:12px; color:#4ade80; margin-bottom:8px;">🎟 Промокод: ${order.promoCode} (-${order.discountAmount} ₽)</div>` : '';
+                    container.innerHTML += `
+                        <div class="order-card ${isPendingClass}">
+                            <div class="order-header">
+                                <span class="order-id">Заказ #${shortId}</span>
+                                ${statusHtml}
+                            </div>
+                            <div style="margin-bottom: 15px;">${deliveriesHtml}</div>
+                            ${promoHtml}
+                            <div class="order-items-text">Состав: ${itemsText}</div>
+                            <div style="font-size: 11px; color: #888; margin-bottom: 5px;">Дата: ${dateStr}</div>
+                            <div class="order-total">Сумма: <span>${order.total} ₽</span></div>
+                            ${refundReasonHtml}
+                            ${buttonsHtml}
+                        </div>`;
+                });
             });
         }
 
-        // 9. 3D-эффект карточек
-        if (window.matchMedia("(pointer: fine)").matches) {
-            const cards = document.querySelectorAll('.lD6N-plan-card');
-            cards.forEach(card => {
-                card.addEventListener('mousemove', (e) => {
-                    const rect = card.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
-                    const centerX = rect.width / 2;
-                    const centerY = rect.height / 2;
-                    const rotateX = ((y - centerY) / centerY) * -5;
-                    const rotateY = ((x - centerX) / centerX) * 5;
-                    
-                    card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
-                });
-                card.addEventListener('mouseleave', () => {
-                    card.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`;
-                    card.style.transition = 'transform 0.4s ease';
-                });
-                card.addEventListener('mouseenter', () => {
-                    card.style.transition = 'none';
+        window.markDelivered = async function(orderId) {
+            try { await update(ref(db, 'orders/' + orderId), { status: 'delivered' }); } catch (e) { alert("Ошибка обновления статуса."); }
+        };
+
+        window.refundOrder = async function(orderId) {
+            const reason = prompt("Введите причину возврата (обязательно):");
+            if (reason === null || reason.trim() === "") { alert("Возврат отменён."); return; }
+            try { await update(ref(db, 'orders/' + orderId), { status: 'refunded', refundReason: reason.trim() }); } catch (e) { alert("Ошибка возврата."); }
+        };
+
+        window.deleteOrder = async function(orderId) {
+            const shortId = orderId.slice(-4);
+            if (!confirm(`Удалить заказ #${shortId}?`)) return;
+            try { await remove(ref(db, 'orders/' + orderId)); } catch (e) { alert("Ошибка: " + e.message); }
+        };
+
+        // === НОВОСТИ ===
+        window.publishNews = async function() {
+            const title = document.getElementById('newsAdminTitle').value.trim();
+            const text = document.getElementById('newsAdminText').value.trim();
+            const isImportant = document.getElementById('newsAdminImportant').checked;
+            const btn = document.getElementById('newsPublishBtn');
+            if (!title || !text) { alert("Заполните заголовок и текст."); return; }
+            btn.disabled = true; btn.innerText = "Публикация...";
+            try {
+                await push(ref(db, 'news'), { title, text, isImportant, timestamp: Date.now() });
+                document.getElementById('newsAdminTitle').value = '';
+                document.getElementById('newsAdminText').value = '';
+                document.getElementById('newsAdminImportant').checked = false;
+                alert("Новость опубликована!");
+            } catch (e) { alert("Ошибка: " + e.message); }
+            finally { btn.disabled = false; btn.innerText = "Опубликовать"; }
+        };
+
+        function renderAdminNews() {
+            const container = document.getElementById('adminNewsList');
+            if (!container) return;
+            container.innerHTML = '<p style="color:#888; text-align:center;">Загрузка...</p>';
+            if (window.unsubAdminNews) window.unsubAdminNews();
+            window.unsubAdminNews = onValue(ref(db, 'news'), (snapshot) => {
+                container.innerHTML = '';
+                if (!snapshot.exists()) { container.innerHTML = '<p style="color:#888; text-align:center;">Пока нет новостей.</p>'; return; }
+                let allNews = [];
+                snapshot.forEach((child) => { allNews.push({ id: child.key, ...child.val() }); });
+                allNews.sort((a, b) => b.timestamp - a.timestamp);
+                allNews.forEach(news => {
+                    let d = new Date(news.timestamp).toLocaleString('ru-RU');
+                    let badge = news.isImportant ? '<span class="badge-important">Важно</span>' : '';
+                    container.innerHTML += `
+                        <div class="admin-news-item">
+                            <div class="admin-news-item-head">
+                                <div>
+                                    <div class="admin-news-item-title">${news.title} ${badge}</div>
+                                    <div class="admin-news-item-date">${d}</div>
+                                </div>
+                            </div>
+                            <div class="admin-news-item-text">${news.text}</div>
+                            <div class="admin-news-item-actions">
+                                <button class="admin-delete-btn" onclick="deleteNews('${news.id}')">🗑 Удалить</button>
+                            </div>
+                        </div>`;
                 });
             });
         }
+
+        window.deleteNews = async function(newsId) {
+            if (!confirm("Удалить новость?")) return;
+            try { await remove(ref(db, 'news/' + newsId)); } catch (e) { alert("Ошибка: " + e.message); }
+        };
+
+        onValue(ref(db, 'news'), (snapshot) => {
+            const newsContainer = document.getElementById('newsContainer');
+            if (!newsContainer) return;
+            newsContainer.innerHTML = '';
+            if (!snapshot.exists()) {
+                newsContainer.innerHTML = '<p style="color: #888; text-align: center; grid-column: 1/-1;">Пока нет новостей.</p>';
+                return;
+            }
+            let allNews = [];
+            snapshot.forEach((child) => { allNews.push({ id: child.key, ...child.val() }); });
+            allNews.sort((a, b) => b.timestamp - a.timestamp);
+            allNews.forEach(news => {
+                let d = new Date(news.timestamp).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+                let badgeHtml = news.isImportant ? '<span class="lD6N-news-badge">Важно</span>' : '';
+                let importantClass = news.isImportant ? 'important' : '';
+                newsContainer.innerHTML += `
+                    <div class="lD6N-news-card ${importantClass}">
+                        <div class="lD6N-news-header">
+                            <div>
+                                <h3 class="lD6N-news-title">${news.title}</h3>
+                                <div class="lD6N-news-date">${d}</div>
+                            </div>
+                            ${badgeHtml}
+                        </div>
+                        <div class="lD6N-news-text">${news.text}</div>
+                    </div>`;
+            });
+        });
+
+        // === ИНФО ДЛЯ АДМИНОВ ===
+        window.openAdminInfoModal = function() {
+            let pass = prompt("Введите пароль администратора:");
+            if (pass === ADMIN_PASSWORD) { document.getElementById('adminInfoModal').classList.add('active'); }
+            else if (pass !== null) { alert("Неверный пароль!"); }
+        };
+        window.closeAdminInfoModal = function(e) { if (e) e.stopPropagation(); document.getElementById('adminInfoModal').classList.remove('active'); };
+
+        // === ФОРУМ ===
+        function renderAdminForum() {
+            const container = document.getElementById('adminForumList');
+            if (!container) return;
+            container.innerHTML = '<p style="color:#888; text-align:center;">Загрузка...</p>';
+            if (window.unsubAdminForum) window.unsubAdminForum();
+            window.unsubAdminForum = onValue(ref(db, 'forum'), (snapshot) => {
+                container.innerHTML = '';
+                if (!snapshot.exists()) { container.innerHTML = '<p style="color:#888; text-align:center;">Сообщений нет.</p>'; return; }
+                let all = [];
+                snapshot.forEach((child) => { all.push({ id: child.key, ...child.val() }); });
+                all.sort((a, b) => b.timestamp - a.timestamp);
+                all.forEach(post => {
+                    let d = new Date(post.timestamp).toLocaleString('ru-RU');
+                    let isPriv = !!post.isPrivate;
+                    let tag = isPriv ? '<span class="admin-forum-tag priv">Жалоба админа</span>' : '<span class="admin-forum-tag pub">Публичная</span>';
+                    let mediaHtml = post.mediaUrl ? `<a href="${post.mediaUrl}" target="_blank"><img src="${post.mediaUrl}" class="admin-forum-item-media" alt="фото"></a>` : '';
+                    container.innerHTML += `
+                        <div class="admin-forum-item ${isPriv ? 'private' : 'public'}">
+                            <div class="admin-forum-item-head">
+                                <div>
+                                    <div class="admin-forum-item-author ${isPriv ? 'is-admin' : ''}">${post.nick} ${tag}</div>
+                                    <div class="admin-forum-item-date">${d}</div>
+                                </div>
+                            </div>
+                            <div class="admin-forum-item-text">${post.text}</div>
+                            ${mediaHtml}
+                            <div class="admin-forum-item-actions" style="margin-top:10px;">
+                                <div></div>
+                                <button class="admin-delete-btn" onclick="deleteForumPost('${post.id}')">🗑 Удалить</button>
+                            </div>
+                        </div>`;
+                });
+            });
+        }
+
+        window.deleteForumPost = async function(postId) {
+            if (!confirm("Удалить сообщение?")) return;
+            try { await remove(ref(db, 'forum/' + postId)); } catch (e) { alert("Ошибка: " + e.message); }
+        };
+
+        let isAdminForumUnlocked = false;
+
+        window.openForumModal = function() {
+            document.getElementById('forumModal').classList.add('active');
+            switchForumTab('players');
+            renderForumPosts();
+        };
+        window.closeForumModal = function(e) { if (e) e.stopPropagation(); document.getElementById('forumModal').classList.remove('active'); };
+
+        window.openAdminForum = function() {
+            if (!isAdminForumUnlocked) {
+                let pass = prompt("Пароль администратора:");
+                if (pass === ADMIN_PASSWORD) { isAdminForumUnlocked = true; }
+                else { if (pass !== null) alert("Неверный пароль!"); return; }
+            }
+            switchForumTab('admins');
+        };
+
+        window.switchForumTab = function(tabId) {
+            document.querySelectorAll('#forumModal .lD6N-tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('#forumModal .lD6N-tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById('forum-' + tabId).classList.add('active');
+            document.getElementById('btn-forum-' + tabId).classList.add('active');
+            renderForumPosts();
+        };
+
+        async function uploadToImgBB(file) {
+            const formData = new FormData();
+            formData.append('image', file);
+            const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: 'POST', body: formData });
+            if (!response.ok) throw new Error('Ошибка ImgBB');
+            const data = await response.json();
+            return data.data.url;
+        }
+
+        function renderForumPosts() {
+            const playersList = document.getElementById('forumPlayersList');
+            const adminsList = document.getElementById('forumAdminsList');
+            if (playersList) playersList.innerHTML = '<p style="color:#888; text-align:center;">Загрузка...</p>';
+            if (adminsList) adminsList.innerHTML = '<p style="color:#888; text-align:center;">Загрузка...</p>';
+            if (window.unsubForum) window.unsubForum();
+            window.unsubForum = onValue(ref(db, 'forum'), (snapshot) => {
+                let playerPosts = [], adminPosts = [];
+                snapshot.forEach((child) => {
+                    const data = child.val();
+                    if (data.isPrivate) { adminPosts.push(data); } else { playerPosts.push(data); }
+                });
+                playerPosts.sort((a,b) => b.timestamp - a.timestamp);
+                adminPosts.sort((a,b) => b.timestamp - a.timestamp);
+                const gen = (post) => {
+                    let d = new Date(post.timestamp).toLocaleString();
+                    let mediaHtml = post.mediaUrl ? `<img src="${post.mediaUrl}" class="forum-media" loading="lazy">` : '';
+                    let authorStyle = post.isPrivate ? 'style="color:#eab308;"' : '';
+                    let authorText = post.isPrivate ? `${post.nick} (Админ)` : post.nick;
+                    let borderStyle = post.isPrivate ? 'style="border-color: #eab308;"' : '';
+                    return `
+                        <div class="forum-post" ${borderStyle}>
+                            <div class="forum-post-header">
+                                <span class="forum-post-author" ${authorStyle}>${authorText}</span>
+                                <span class="forum-post-date">${d}</span>
+                            </div>
+                            <div class="forum-post-text">${post.text}</div>
+                            ${mediaHtml}
+                        </div>`;
+                };
+                if (playersList) {
+                    playersList.innerHTML = '';
+                    if (playerPosts.length === 0) playersList.innerHTML = '<p style="color:#888;">Пока нет жалоб.</p>';
+                    playerPosts.forEach(post => { playersList.innerHTML += gen(post); });
+                }
+                if (adminsList && isAdminForumUnlocked) {
+                    adminsList.innerHTML = '';
+                    if (adminPosts.length === 0) adminsList.innerHTML = '<p style="color:#888;">Пока нет жалоб.</p>';
+                    adminPosts.forEach(post => { adminsList.innerHTML += gen(post); });
+                } else if (adminsList && !isAdminForumUnlocked) {
+                    adminsList.innerHTML = '<p style="color:#ef4444; text-align:center;">Введите пароль.</p>';
+                }
+            });
+        }
+
+        window.submitForumPost = async function(isPrivate) {
+            const nickInput = isPrivate ? document.getElementById('forumAdminNick') : document.getElementById('forumPlayerNick');
+            const textInput = isPrivate ? document.getElementById('forumAdminText') : document.getElementById('forumPlayerText');
+            const fileInput = isPrivate ? document.getElementById('forumAdminFile') : document.getElementById('forumPlayerFile');
+            const submitBtn = isPrivate ? document.getElementById('forumAdminSubmitBtn') : document.getElementById('forumPlayerSubmitBtn');
+            const nick = nickInput.value.trim();
+            const text = textInput.value.trim();
+            const file = fileInput.files[0];
+            if (!nick || !text) { alert("Заполните ник и текст."); return; }
+            if (file && file.type.startsWith('video/')) {
+                document.getElementById('videoErrorModal').classList.add('active');
+                return;
+            }
+            submitBtn.disabled = true; submitBtn.innerText = "Отправка...";
+            try {
+                let mediaUrl = null;
+                if (file) mediaUrl = await uploadToImgBB(file);
+                await push(ref(db, 'forum'), { nick, text, mediaUrl, isPrivate, timestamp: Date.now() });
+                nickInput.value = ''; textInput.value = ''; fileInput.value = '';
+                alert("Жалоба отправлена!");
+            } catch (e) { alert("Ошибка: " + e.message); }
+            finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = isPrivate ? "Отправить (только для админов)" : "Отправить жалобу";
+            }
+        };
+
+        // === ПРОМОКОДЫ ===
+        window.publishPromo = async function() {
+            const code = document.getElementById('promoCodeAdmin').value.trim().toUpperCase();
+            const type = document.getElementById('promoType').value;
+            const value = parseFloat(document.getElementById('promoValue').value);
+            const maxUses = parseInt(document.getElementById('promoMaxUses').value, 10);
+
+            if (!code) { alert('Введите код'); return; }
+            if (!value || value <= 0) { alert('Введите скидку'); return; }
+            if (type === 'percent' && value > 100) { alert('Процент > 100'); return; }
+            if (!maxUses || maxUses < 1) { alert('Введите лимит'); return; }
+
+            try {
+                const existing = await get(ref(db, 'promocodes/' + code));
+                if (existing.exists()) {
+                    if (!confirm(`Промокод "${code}" уже существует. Перезаписать?`)) return;
+                }
+                await set(ref(db, 'promocodes/' + code), {
+                    discountType: type, discount: value, maxUses,
+                    usedCount: 0, active: true, createdAt: Date.now()
+                });
+                document.getElementById('promoCodeAdmin').value = '';
+                document.getElementById('promoValue').value = '';
+                document.getElementById('promoMaxUses').value = '';
+                alert(`Промокод "${code}" создан!`);
+            } catch (e) { alert('Ошибка: ' + e.message); }
+        };
+
+        function renderAdminPromo() {
+            const container = document.getElementById('adminPromoList');
+            if (!container) return;
+            container.innerHTML = '<p style="color:#888; text-align:center;">Загрузка...</p>';
+            if (window.unsubAdminPromo) window.unsubAdminPromo();
+            window.unsubAdminPromo = onValue(ref(db, 'promocodes'), (snap) => {
+                container.innerHTML = '';
+                if (!snap.exists()) { container.innerHTML = '<p style="color:#888; text-align:center;">Промокодов нет.</p>'; return; }
+                let all = [];
+                snap.forEach(ch => all.push({ code: ch.key, ...ch.val() }));
+                all.sort((a,b) => (b.code || '').localeCompare(a.code || ''));
+                all.forEach(p => {
+                    const dText = p.discountType === 'percent' ? `${p.discount}%` : `${p.discount} ₽`;
+                    const isActive = !!p.active;
+                    container.innerHTML += `
+                        <div class="promo-card ${isActive ? '' : 'inactive'}">
+                            <div>
+                                <div class="promo-card-code">${p.code}</div>
+                                <div class="promo-card-meta">
+                                    Скидка: <b>${dText}</b><br>
+                                    Использовано: <b>${p.usedCount || 0} / ${p.maxUses || 0}</b>
+                                </div>
+                            </div>
+                            <div class="promo-card-actions">
+                                <button class="promo-toggle-btn" onclick="togglePromo('${p.code}')">${isActive ? '⏸ Выкл' : '▶ Вкл'}</button>
+                                <button class="admin-delete-btn" style="padding:6px 10px; font-size:11px;" onclick="deletePromo('${p.code}')">🗑</button>
+                            </div>
+                        </div>
+                    `;
+                });
+            });
+        }
+
+        window.togglePromo = async function(code) {
+            try {
+                const snap = await get(ref(db, 'promocodes/' + code));
+                if (!snap.exists()) return;
+                await update(ref(db, 'promocodes/' + code), { active: !snap.val().active });
+            } catch (e) { alert('Ошибка: ' + e.message); }
+        };
+
+        window.deletePromo = async function(code) {
+            if (!confirm(`Удалить промокод "${code}"?`)) return;
+            try { await remove(ref(db, 'promocodes/' + code)); } catch (e) { alert('Ошибка: ' + e.message); }
+        };
+
+        // === ИНИЦИАЛИЗАЦИЯ ===
+        updateCartUI();
     </script>
 </body>
-</html>
+                </html>
